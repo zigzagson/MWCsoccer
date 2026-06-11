@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>宇树 G1 机器人点球与守门大战三方协作架构</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #5d6b7a;
+      --line: #cfd8df;
+      --panel: #ffffff;
+      --band: #f3f6f8;
+      --accent: #0f766e;
+      --accent-soft: #d9f2ef;
+      --nav: #2563eb;
+      --vision: #c2410c;
+      --control: #7c3aed;
+      --warn: #b45309;
+      --ok: #15803d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #eef2f5;
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    header {
+      min-height: 52vh;
+      display: grid;
+      align-items: end;
+      background:
+        linear-gradient(180deg, rgba(10, 31, 45, 0.18), rgba(10, 31, 45, 0.86)),
+        radial-gradient(circle at 22% 20%, rgba(255, 255, 255, 0.42), transparent 20%),
+        linear-gradient(135deg, #2c7a7b 0%, #1f6feb 42%, #4c2f92 100%);
+      color: #fff;
+      padding: 56px 24px 42px;
+    }
+
+    .hero-inner,
+    main {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #bdeee9;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 980px;
+      font-size: clamp(34px, 6vw, 66px);
+      line-height: 1.06;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 900px;
+      margin: 18px 0 0;
+      color: #e5edf2;
+      font-size: 18px;
+    }
+
+    main {
+      padding: 28px 0 72px;
+    }
+
+    section {
+      margin-top: 24px;
+      padding: 28px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 25px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 12px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .module {
+      border: 1px solid var(--line);
+      border-left-width: 5px;
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 232px;
+      background: #fff;
+    }
+
+    .module.vision {
+      border-left-color: var(--vision);
+    }
+
+    .module.nav {
+      border-left-color: var(--nav);
+    }
+
+    .module.control {
+      border-left-color: var(--control);
+    }
+
+    .module h3 {
+      margin-top: 0;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: #111827;
+      background: #e8edf2;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .tag.vision {
+      background: #ffedd5;
+      color: #8a2c0a;
+    }
+
+    .tag.nav {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .tag.control {
+      background: #ede9fe;
+      color: #5b21b6;
+    }
+
+    .tag.ok {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .tag.warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    ul,
+    ol {
+      padding-left: 20px;
+      margin: 8px 0 0;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    .architecture {
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .swimlane {
+      min-width: 960px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--band);
+      padding: 14px;
+    }
+
+    .lane-title {
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .node {
+      min-height: 58px;
+      padding: 11px 12px;
+      margin: 10px 0;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    .arrow {
+      margin: 8px 0;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .topic-table,
+    .message-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      vertical-align: top;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      text-align: left;
+    }
+
+    th {
+      background: #e7edf2;
+      color: #263441;
+      font-weight: 800;
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #eef2f5;
+      color: #111827;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.94em;
+    }
+
+    pre {
+      overflow-x: auto;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .rule {
+      padding: 14px;
+      border-left: 5px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent-soft);
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      header {
+        min-height: 46vh;
+        padding: 40px 20px 32px;
+      }
+
+      .hero-inner,
+      main {
+        width: min(100% - 28px, 1180px);
+      }
+
+      section {
+        padding: 20px;
+      }
+
+      .grid-3,
+      .flow,
+      .rules {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero-inner">
+      <p class="eyebrow">MWC Soccer · Unitree G1 + Jetson NX · ROS2 三方协作规范</p>
+      <h1>机器人点球与守门大战架构规划</h1>
+      <p class="subtitle">
+        目标是明确视觉 SDK、导航模块、ROS2 主控制节点之间的最小协作接口：
+        视觉 SDK 只向导航提供检测能力，导航统一广播球和球门的语义坐标，主控负责流程编排、动作触发和异常仲裁。
+      </p>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>一、模块职责边界</h2>
+      <div class="grid-3">
+        <article class="module vision">
+          <h3><span class="tag vision">视觉 SDK</span> 导航内部调用的检测库</h3>
+          <ul>
+            <li>作为 SDK 被导航模块调用，不单独设计 ROS2 发布节点。</li>
+            <li>输入相机图像，输出球、球门框、机器人脚等像素级检测结果。</li>
+            <li>返回检测结果；具体字段、数据结构和置信度规则由视觉与导航双方约定。</li>
+            <li>不负责坐标转换、轨迹预测、机器人移动和动作触发。</li>
+          </ul>
+        </article>
+
+        <article class="module nav">
+          <h3><span class="tag nav">导航模块</span> 定点导航与视觉跟踪</h3>
+          <ul>
+            <li>内部调用视觉 SDK，结合相机标定、TF、机器人姿态完成坐标转换。</li>
+            <li>点球点位置固定；收到 <code>PENALTY_ATTACK</code> 后，根据目标进球点和球前距离计算定点导航点，并立即开始导航。</li>
+            <li>通过 <code>/soccer/nav_status</code> 广播 <code>navigating_to_point</code> 与 <code>target_reached</code>，让主控判断定点导航是否完成。</li>
+            <li>到点后接收视觉跟踪命令，开始/停止图像检测与球、球门坐标换算，并通过 <code>/soccer/perception</code> 输出球和球门在 <code>dummy</code>/本体坐标系下的位置。</li>
+            <li>不计算点球 <code>ALIGN</code> 微调、不触发踢球动作；最终对位和全身动作由主控负责。</li>
+          </ul>
+        </article>
+
+        <article class="module control">
+          <h3><span class="tag control">ROS2 主控制节点</span> 流程编排与动作执行</h3>
+          <ul>
+            <li>串联点球流程：发布带参数的 <code>PENALTY_ATTACK</code>、等待定点导航到达、打开视觉跟踪、<code>ALIGN</code>、关闭视觉跟踪、射门。</li>
+            <li>串联守门流程：观察球、计算球轨迹、移动到拦截点、执行挡球动作。</li>
+            <li>定点导航期间不接管导航速度；收到 <code>target_reached</code> 后再请求视觉跟踪并执行微调。</li>
+            <li>通过 deploy_cpp 的 ROS2 action 接口触发射门等全身运控动作。</li>
+            <li>负责安全仲裁、超时处理、状态机切换和日志记录。</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>二、总体通信架构</h2>
+      <div class="architecture">
+        <div class="swimlane">
+          <div class="lane">
+            <div class="lane-title"><span class="tag vision">vision_sdk</span></div>
+            <div class="node">SDK 输入<br><code>ImageFrame</code> / 相机内参版本</div>
+            <div class="arrow">导航模块进程内调用</div>
+            <div class="node">SDK 返回<br>球检测结果</div>
+            <div class="node">SDK 返回<br>球门检测结果</div>
+          </div>
+          <div class="lane">
+            <div class="lane-title"><span class="tag nav">soccer_nav_node</span></div>
+            <div class="node">SDK Result → 坐标转换<br><code>base_link</code> / <code>odom</code> / <code>map</code></div>
+            <div class="arrow">融合 TF、相机标定、机器人状态</div>
+            <div class="node">Perception Broadcast<br><code>/soccer/perception</code></div>
+            <div class="node">Point Navigation<br><code>PENALTY_ATTACK</code> → <code>target_reached</code></div>
+            <div class="node">Navigation Status<br><code>/soccer/nav_status</code></div>
+          </div>
+          <div class="lane">
+            <div class="lane-title"><span class="tag control">soccer_brain_node</span></div>
+            <div class="node">Game Mode Command<br><code>/soccer/game_mode_cmd</code></div>
+            <div class="node">Vision Track Command<br><code>/soccer/vision_track_cmd</code></div>
+            <div class="node">Velocity Command<br><code>/nav/cmd_vel_nav</code></div>
+            <div class="node">Behavior State<br><code>/soccer/behavior_state</code></div>
+            <div class="node">Kick Action Trigger<br><code>/whole_body/action_ctrl</code></div>
+          </div>
+        </div>
+      </div>
+      <p class="small">
+        视觉 SDK 不暴露 ROS2 topic。点球阶段的第一段定点导航由导航模块根据固定点球点、目标进球点和球前距离完成；主控在该阶段只看 <code>/soccer/nav_status</code>。导航到点后，主控再通过视觉跟踪命令打开 <code>/soccer/perception</code>，用于最终 <code>ALIGN</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>三、ROS2 Topic 与信令表</h2>
+      <div class="rules">
+        <div class="rule">
+          <strong>正常广播</strong>
+          <p>导航周期性调用视觉 SDK，并以固定频率发布 <code>/soccer/perception</code>。主控只根据该 topic 判断是否看见球、球在哪里、是否看见球门、球门在哪里。</p>
+        </div>
+        <div class="rule">
+          <strong>丢球或丢门</strong>
+          <p>如果 SDK 当前帧没有检测到目标，导航仍发布消息，但将 <code>image_has_ball</code> 或 <code>image_has_goal</code> 置为 <code>false</code>，坐标保留上一帧时必须在 <code>detail</code> 中标注 <code>stale</code>。</p>
+        </div>
+        <div class="rule">
+          <strong>模式切换</strong>
+          <p>主控向导航发 <code>/soccer/game_mode_cmd</code> 和 <code>/soccer/vision_track_cmd</code>。视觉 SDK 不接收主控命令，由导航决定调用哪些检测能力和输出频率。</p>
+        </div>
+        <div class="rule">
+          <strong>动作仲裁</strong>
+          <p>导航负责 <code>PENALTY_ATTACK</code> 后的定点导航；主控负责到点后的视觉跟踪开关、<code>ALIGN</code> 微调、射门动作和异常仲裁。任何动作触发前都必须检查 <code>/soccer/nav_status</code> 和最新 <code>/soccer/perception</code>。</p>
+        </div>
+      </div>
+      <table class="topic-table">
+        <thead>
+          <tr>
+            <th>Topic</th>
+            <th>发布方 → 订阅方</th>
+            <th>建议消息类型</th>
+            <th>QoS</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/soccer/perception</code></td>
+            <td>导航 → 主控</td>
+            <td><code>soccer_msgs/msg/SoccerPerception</code></td>
+            <td>Reliable，Depth 10</td>
+            <td>视觉跟踪开启后广播：图像视野是否有球、球在 <code>dummy</code>/本体坐标系下的坐标、是否有球门、球门中心和门柱坐标。</td>
+          </tr>
+          <tr>
+            <td><code>/soccer/nav_status</code></td>
+            <td>导航 → 主控</td>
+            <td><code>soccer_msgs/msg/NavStatus</code></td>
+            <td>Reliable，Transient Local，Depth 1</td>
+            <td>导航模块是否在线、感知是否可用、当前是否正在定点导航、定点导航目标是否已经到达。</td>
+          </tr>
+          <tr>
+            <td><code>/soccer/game_mode_cmd</code></td>
+            <td>主控 → 导航</td>
+            <td><code>soccer_msgs/msg/GameModeCommand</code></td>
+            <td>Reliable，Transient Local，Depth 1</td>
+            <td>切换 <code>PENALTY_ATTACK</code>、<code>GOALKEEPER</code>、<code>IDLE</code> 等工作模式；点球模式下携带目标进球点和球前距离，导航立即计算并执行定点导航。</td>
+          </tr>
+          <tr>
+            <td><code>/soccer/vision_track_cmd</code></td>
+            <td>主控 → 导航</td>
+            <td><code>soccer_msgs/msg/VisionTrackCommand</code></td>
+            <td>Reliable，Depth 5</td>
+            <td>到点后的视觉跟踪开关：<code>START_BALL_TRACK</code> 开始图像检测与球坐标换算，<code>STOP_BALL_TRACK</code> 停止图像检测。</td>
+          </tr>
+          <tr>
+            <td><code>/soccer/behavior_state</code></td>
+            <td>主控 → 全体</td>
+            <td><code>soccer_msgs/msg/BehaviorState</code></td>
+            <td>Reliable，Transient Local，Depth 1</td>
+            <td>广播当前状态机阶段，便于三方同步与日志复盘。</td>
+          </tr>
+          <tr>
+            <td><code>/nav/cmd_vel_nav</code></td>
+            <td>导航/主控 → G1 底层运动控制</td>
+            <td><code>geometry_msgs/msg/Twist</code> 或厂商运动接口</td>
+            <td>Reliable，Depth 5</td>
+            <td>连续速度控制；源码中导航节点参数 <code>nav_cmd_vel_topic</code> 和 deploy_cpp 真机接口订阅端都默认为该话题。定点导航阶段由导航发布，<code>ALIGN</code> 阶段由主控发布。</td>
+          </tr>
+          <tr>
+            <td><code>/whole_body/action_ctrl</code></td>
+            <td>主控 → deploy_cpp 全身运控 Action Server</td>
+            <td><code>message_center/action/ExecutionUnit</code></td>
+            <td>Reliable，Depth 3</td>
+            <td>触发射门等全身动作；当前点球射门优先走该 action 接口。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>四、自定义消息格式建议</h2>
+
+      <h3>1. <code>SoccerPerception.msg</code></h3>
+      <pre><code>std_msgs/Header header
+bool image_has_ball
+bool image_has_goal
+geometry_msgs/PointStamped ball # recommended frame_id: dummy
+geometry_msgs/PointStamped goal_center
+geometry_msgs/PointStamped left_post
+geometry_msgs/PointStamped right_post
+float32 ball_confidence
+float32 goal_confidence
+bool transform_valid
+string detail</code></pre>
+
+      <table class="message-table">
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>含义</th>
+            <th>坐标约定</th>
+            <th>主控用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ball</code></td>
+            <td>足球中心点的 3D 坐标。只有 <code>image_has_ball=true</code> 且 <code>transform_valid=true</code> 时可信。</td>
+            <td>默认 <code>dummy</code>。<code>x</code> 表示机器人前方距离，<code>y</code> 表示左右偏移，<code>z</code> 表示高度或投影高度。</td>
+            <td>点球到达定点导航点后用于最终对位；守门时用连续多帧 <code>ball</code> 计算球速、轨迹和拦截点。</td>
+          </tr>
+          <tr>
+            <td><code>goal_center</code></td>
+            <td>球门中心点坐标，通常由左右门柱或球门框检测结果计算得到。</td>
+            <td>与 <code>ball</code> 使用同一 <code>frame_id</code>，默认 <code>dummy</code>。</td>
+            <td>点球时用于确定射门方向；守门时用于定义球门线或防守中心。</td>
+          </tr>
+          <tr>
+            <td><code>left_post</code></td>
+            <td>从机器人当前视角定义的左侧门柱坐标。</td>
+            <td>与 <code>goal_center</code> 同坐标系。左右以机器人看向球门时的图像/空间方向为准，赛前需统一。</td>
+            <td>用于估计球门宽度、射门角度边界，以及守门时的左侧防守边界。</td>
+          </tr>
+          <tr>
+            <td><code>right_post</code></td>
+            <td>从机器人当前视角定义的右侧门柱坐标。</td>
+            <td>与 <code>goal_center</code> 同坐标系，当前固定使用 <code>dummy</code>。</td>
+            <td>用于估计球门宽度、射门角度边界，以及守门时的右侧防守边界。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>2. <code>NavStatus.msg</code></h3>
+      <pre><code>std_msgs/Header header
+string mode
+bool nav_alive
+bool perception_alive
+bool navigating_to_point
+bool target_reached
+string detail</code></pre>
+
+      <h3>3. <code>VisionTrackCommand.msg</code></h3>
+      <pre><code>std_msgs/Header header
+string command              # START_BALL_TRACK, STOP_BALL_TRACK</code></pre>
+
+      <h3>4. <code>GameModeCommand.msg</code> / <code>BehaviorState.msg</code></h3>
+      <pre><code># GameModeCommand
+std_msgs/Header header
+string mode              # IDLE, PENALTY_ATTACK, GOALKEEPER, CALIBRATION
+float32 goal_target       # only for PENALTY_ATTACK, left positive, right negative, range [-1, 1]
+float32 nav_ball_distance_m # distance from fixed navigation point to ball
+bool reset_state
+
+# BehaviorState
+std_msgs/Header header
+string mode
+string state             # NAVIGATE_TO_POINT, START_BALL_TRACK, ALIGN, READY_KICK, KICK, TRACK_BALL, INTERCEPT, BLOCK, RETURN_CENTER, RECOVER, ERROR
+string detail
+float32 progress
+bool active</code></pre>
+    </section>
+
+    <section>
+      <h2>五、点球进攻流程</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. 发布点球模式与射门参数</strong>
+          主控发布 <code>/soccer/game_mode_cmd: PENALTY_ATTACK</code>，同时携带 <code>goal_target</code> 和 <code>nav_ball_distance_m</code>。<code>goal_target</code> 使用归一化球门横向坐标，右门柱为 <code>-1</code>，左门柱为 <code>1</code>，左侧为正、右侧为负。
+        </div>
+        <div class="step">
+          <strong>2. 导航计算定点导航点</strong>
+          点球点位置固定，导航不需要先找球。导航根据固定点球点、目标进球点和 <code>nav_ball_distance_m</code>，沿“目标进球点 → 足球”的延长线计算机器人应到达的定点导航点。
+        </div>
+        <div class="step">
+          <strong>3. 立即执行定点导航</strong>
+          导航在收到 <code>PENALTY_ATTACK</code> 后立即开始导航到该点，并将 <code>navigating_to_point=true</code> 写入 <code>/soccer/nav_status</code>。这一阶段主控不发布行走速度，只等待导航状态。
+        </div>
+        <div class="step">
+          <strong>4. 到点后打开视觉跟踪</strong>
+          导航到达定点导航点后广播 <code>target_reached=true</code>。主控收到后发布 <code>/soccer/vision_track_cmd: START_BALL_TRACK</code>，导航开始图像检测和球、球门坐标换算，并通过 <code>/soccer/perception</code> 广播球坐标和球门坐标。
+        </div>
+        <div class="step">
+          <strong>5. 主控视觉微调</strong>
+          主控进入 <code>ALIGN</code>，根据 <code>dummy</code>/本体坐标系下的球位置做小步对位。此时导航只负责视觉坐标输出，不再负责运动控制。
+        </div>
+        <div class="step">
+          <strong>6. 关闭视觉跟踪并射门</strong>
+          <code>ALIGN</code> 连续 N 帧满足距离、横向和朝向阈值后，主控发布 <code>/soccer/vision_track_cmd: STOP_BALL_TRACK</code>，导航停止图像检测。随后主控通过 deploy_cpp 的 <code>/whole_body/action_ctrl</code> action 发送 <code>ExecutionUnit</code> 射门请求。
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>六、守门流程</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. 模式切换</strong>
+          主控发布 <code>/soccer/game_mode_cmd: GOALKEEPER</code>，导航持续广播球坐标，并持有预设守门中心点；主控进入 <code>TRACK_BALL</code>。
+        </div>
+        <div class="step">
+          <strong>2. 球轨迹估计</strong>
+          主控连续读取 <code>/soccer/perception.ball</code>，用多帧球坐标估计速度向量、轨迹和到达球门线的时间。
+        </div>
+        <div class="step">
+          <strong>3. 拦截可达性判断</strong>
+          主控根据自己计算的拦截点判断是否可达；如果可达则横移到拦截位姿，如果不可达则选择覆盖近门柱或中心防守位姿。
+        </div>
+        <div class="step">
+          <strong>4. 挡球动作触发</strong>
+          当主控计算的预计到达时间小于动作准备时间且轨迹置信度达标，主控通过 <code>/whole_body/action_ctrl</code> 触发对应的 <code>BLOCK_LEFT/RIGHT/CENTER</code> 全身动作；若守门动作尚未接入 deploy_cpp，则保持站位或空动作保护。
+        </div>
+        <div class="step">
+          <strong>5. 防误判保护</strong>
+          球速度过低、轨迹方向远离球门、连续帧不一致时，只移动站位，不触发大动作。
+        </div>
+        <div class="step">
+          <strong>6. 回中与再跟踪</strong>
+          完成挡球后回到守门中心点。守门回中仍使用导航的定点导航能力和 <code>navigating_to_point</code>/<code>target_reached</code> 状态，但不复用点球阶段的 <code>/soccer/vision_track_cmd</code>；具体回中命令可在守门协议落地时单独定义。
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>七、关键阈值与协作约定</h2>
+      <div class="rules">
+        <div class="rule">
+          <strong>时间同步</strong>
+          <p>所有导航广播消息必须带 <code>header.stamp</code>。主控丢弃超过 <code>200 ms</code> 的 <code>/soccer/perception</code> 数据；守门轨迹建议使用最近 <code>5-10</code> 帧估计。</p>
+        </div>
+        <div class="rule">
+          <strong>坐标系</strong>
+          <p>视觉 SDK 只返回像素检测给导航。导航输出的每个 <code>PointStamped.header.frame_id</code> 必须明确，当前默认并固定使用 <code>dummy</code>。</p>
+        </div>
+        <div class="rule">
+          <strong>点球对位阈值</strong>
+          <p>建议初始值：横向误差 <code>&lt; 0.04 m</code>，前后误差 <code>&lt; 0.06 m</code>，朝向误差 <code>&lt; 0.08 rad</code>，连续 <code>5</code> 帧满足才允许射门。</p>
+        </div>
+        <div class="rule">
+          <strong>守门触发阈值</strong>
+          <p>轨迹置信度 <code>&gt; 0.65</code>，预计到达时间大于动作最小准备时间；若球速方向不指向球门线，保持站位观察。</p>
+        </div>
+        <div class="rule">
+          <strong>异常仲裁</strong>
+          <p>定点导航超时、<code>target_reached</code> 未到达、视觉跟踪后 <code>image_has_ball=false</code> 或坐标置信度低于阈值时，主控进入 <code>HOLD</code> 或 <code>ERROR</code>，禁止直接触发踢球。</p>
+        </div>
+        <div class="rule">
+          <strong>日志与调参</strong>
+          <p>三方统一记录时间戳、模式、状态、置信度和误差。比赛前用 rosbag2 回放检查接口稳定性。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>八、状态机建议</h2>
+      <table class="message-table">
+        <thead>
+          <tr>
+            <th>模式</th>
+            <th>状态序列</th>
+            <th>进入条件</th>
+            <th>退出条件</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>PENALTY_ATTACK</code></td>
+            <td><code>NAVIGATE_TO_POINT → START_BALL_TRACK → ALIGN → STOP_BALL_TRACK → READY_KICK → KICK → FINISH</code></td>
+            <td>主控收到点球进攻命令，导航和感知状态正常。</td>
+            <td>射门完成、超时、急停、导航到点失败或感知故障。</td>
+          </tr>
+          <tr>
+            <td><code>GOALKEEPER</code></td>
+            <td><code>HOLD_CENTER → TRACK_BALL → INTERCEPT → BLOCK → RETURN_CENTER → RECOVER</code></td>
+            <td>主控收到守门命令，守门中心点和球门线坐标已标定。</td>
+            <td>挡球完成、回中完成、超时、急停或主控轨迹估计不可用。</td>
+          </tr>
+          <tr>
+            <td><code>CALIBRATION</code></td>
+            <td><code>CHECK_CAMERA → CHECK_TF → CHECK_GOAL → READY</code></td>
+            <td>赛前调试或换场地后手动触发。</td>
+            <td>相机内参、外参、球门点和机器人初始位姿确认。</td>
+          </tr>
+          <tr>
+            <td><code>ERROR</code></td>
+            <td><code>STOP_MOTION → REPORT → WAIT_RESET</code></td>
+            <td>急停、数据过期、动作失败、置信度持续过低。</td>
+            <td>主控收到 <code>reset_state=true</code> 且模块健康恢复。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>九、三方交付清单</h2>
+      <table class="topic-table">
+        <thead>
+          <tr>
+            <th>团队</th>
+            <th>必须交付</th>
+            <th>联调验证</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag vision">视觉 SDK</span></td>
+            <td>SDK 动态库或 Python/C++ 接口、相机图像格式要求、检测可视化 debug 图；具体输入输出结构由视觉和导航双方约定。</td>
+            <td>导航传入单帧图像时，SDK 能稳定返回球和球门检测结果；内部字段命名、数组顺序和置信度规则由视觉与导航联调确认。</td>
+          </tr>
+          <tr>
+            <td><span class="tag nav">导航模块</span></td>
+            <td>SDK 集成、坐标转换节点、TF 依赖说明、<code>/soccer/perception</code>、<code>/soccer/nav_status</code>、点球定点导航点计算逻辑。</td>
+            <td>验证 <code>PENALTY_ATTACK(goal_target, nav_ball_distance_m)</code> 能计算正确定点导航点，并广播 <code>navigating_to_point → target_reached</code>；到点后再验证视觉跟踪开关和球坐标输出。</td>
+          </tr>
+          <tr>
+            <td><span class="tag control">主控制节点</span></td>
+            <td>点球状态机、守门状态机、模式参数下发、视觉跟踪开关、<code>ALIGN</code> 微调、动作触发接口、异常仲裁、<code>/soccer/behavior_state</code>。</td>
+            <td>仿真或空动作模式下跑完整流程，验证模式参数、到点等待、视觉跟踪开关、微调结束关闭视觉和 <code>/whole_body/action_ctrl</code> 触发时机。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

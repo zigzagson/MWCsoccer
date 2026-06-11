@@ -1,0 +1,73 @@
+soccer_brain_node:
+  ros__parameters:
+    # Startup mode. The current controller implements PENALTY_ATTACK.
+    start_mode: PENALTY_ATTACK
+    auto_start: true
+
+    # Penalty attack request sent to /soccer/game_mode_cmd.
+    # goal_target: left positive, right negative, range [-1, 1].
+    goal_target: 0.0
+    nav_ball_distance_m: 0.75
+
+    # Unitree SDK2 / G1 loco settings.
+    # Set unitree_network_interface when DDS must bind to a specific NIC.
+    unitree_network_interface: ""
+    align_obstacle_fsm_id: 812
+    align_restore_fsm_id: 802
+    restore_fsm_after_align: true
+    require_unitree_align_mode: true
+
+    # State-machine timing.
+    control_rate_hz: 20.0
+    nav_timeout_s: 25.0
+    nav_status_timeout_s: 1.0
+    align_timeout_s: 8.0
+    perception_timeout_s: 0.2
+    post_track_settle_s: 0.3
+    pre_kick_pause_s: 0.2
+
+    # ALIGN target and stability gate.
+    # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
+    align_target_ball_x_m: 0.22
+    align_target_ball_y_m: 0.0
+    align_x_tolerance_m: 0.06
+    align_y_tolerance_m: 0.04
+    align_yaw_tolerance_rad: 0.08
+    align_required_stable_frames: 5
+
+    # ALIGN stepping controller. The node enters align_obstacle_fsm_id before
+    # sending these short SetVelocity steps.
+    align_kx: 0.45
+    align_ky: 0.55
+    align_kw: 0.90
+    align_max_vx: 0.12
+    align_max_vy: 0.10
+    align_max_wz: 0.25
+    align_step_duration_s: 0.12
+    align_min_step_period_s: 0.10
+
+    # Perception validity.
+    min_ball_confidence: 0.45
+    min_goal_confidence: 0.35
+
+    # Whole-body kick action.
+    kick_action_server: /whole_body/action_ctrl
+    kick_action_name: PENALTY_KICK
+    enable_kick_action: true
+    kick_server_timeout_s: 2.0
+    kick_result_timeout_s: 8.0
+
+    # Option A: provide the exact JSON consumed by IOROS2REAL/DynamicDanceManager.
+    # This takes priority when non-empty.
+    kick_action_params_json: ""
+
+    # Option B: leave kick_action_params_json empty and set these paths. The node
+    # will build:
+    # {"uuid": kick_action_name, "state_name": kick_action_name,
+    #  "policy_type": kick_policy_type, "model": kick_model_path,
+    #  "trajectory": kick_trajectory_path, "end_behavior": kick_end_behavior,
+    #  "allowed_from": ["PASSIVE", "LOCO", "FIXEDSTAND"]}
+    kick_model_path: ""
+    kick_trajectory_path: ""
+    kick_policy_type: lingshu
+    kick_end_behavior: switch_to_loco
