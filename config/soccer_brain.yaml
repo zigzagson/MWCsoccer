@@ -20,9 +20,9 @@ soccer_brain_node:
 
     # State-machine timing.
     control_rate_hz: 20.0
-    nav_timeout_s: 25.0
+    nav_timeout_s: 45.0
     nav_status_timeout_s: 1.0
-    align_timeout_s: 8.0
+    align_timeout_s: 20.0
     perception_timeout_s: 0.2
     post_track_settle_s: 0.3
     pre_kick_pause_s: 0.2
