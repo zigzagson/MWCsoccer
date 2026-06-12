@@ -6,6 +6,8 @@
 
 - `mwc_soccer_control/src/soccer_brain_node.cpp`
 - `mwc_soccer_control/config/soccer_brain.yaml`
+- `mwc_soccer_control/config/kick3_v0_50000.onnx`
+- `mwc_soccer_control/config/kick3.trajbin`
 - `mwc_soccer_control/launch/soccer_brain.launch.py`
 - `mwc_soccer_control/launch/pre_action_flow_test.launch.py`
 - `mwc_soccer_control/scripts/pre_action_flow_test.py`
@@ -85,21 +87,21 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 ### 状态机时间
 
 - `control_rate_hz`：主控状态机循环频率。默认 `20 Hz`，一般不用改。
-- `nav_timeout_s`：等待导航到点的最大时间。导航可能绕行或场地大时可调大。
-- `nav_status_timeout_s`：`/soccer/nav_status` 超时阈值。调小能更快发现导航掉线，调大能容忍短时抖动。
-- `align_timeout_s`：ALIGN 微调最大时间。太短可能还没对准就失败，太长会拖慢比赛流程。
-- `perception_timeout_s`：视觉感知超时阈值。视觉发布频率低时要适当调大。
-- `post_track_settle_s`：打开视觉跟踪后等待感知稳定的时间。画面刚切换时检测不稳，可以调大。
-- `pre_kick_pause_s`：READY_KICK 到真正发送射门 action 前的停顿。用于让机器人站稳。
+- `nav_timeout_s`：等待导航到点的最大时间。当前默认 `45.0s`，用于容忍导航绕行或场地较大。
+- `nav_status_timeout_s`：`/soccer/nav_status` 超时阈值。当前默认 `2.0s`，用于容忍短时状态抖动。
+- `align_timeout_s`：ALIGN 微调最大时间。当前默认 `20.0s`，用于避免视觉/踏步慢时过早失败。
+- `perception_timeout_s`：视觉感知超时阈值。当前默认 `0.6s`，用于容忍相机、SDK 推理或 TF 短时延迟。
+- `post_track_settle_s`：打开视觉跟踪后等待感知稳定的时间。当前默认 `1.0s`，避免刚打开跟踪时还没出有效球坐标就报错。
+- `pre_kick_pause_s`：READY_KICK 到真正发送射门 action 前的停顿。当前默认 `0.5s`，用于让机器人站稳。
 
 ### ALIGN 目标与稳定判定
 
 - `align_target_ball_x_m`：期望球在 dummy/body 坐标系前方的距离。默认 `0.22 m`。
 - `align_target_ball_y_m`：期望球的横向偏移。默认 `0.0 m`，表示球在正前方。
-- `align_x_tolerance_m`：前后方向容差。调大更容易进入射门，调小对位更严格。
-- `align_y_tolerance_m`：左右方向容差。调大更快通过，调小能提高起脚横向一致性。
-- `align_yaw_tolerance_rad`：朝向容差。调小会要求机器人更正对球/门。
-- `align_required_stable_frames`：连续多少帧都满足容差才认为 ALIGN 成功。调大更稳但更慢，调小更快但容易误判。
+- `align_x_tolerance_m`：前后方向容差。当前默认 `0.08m`，调大更容易进入射门，调小对位更严格。
+- `align_y_tolerance_m`：左右方向容差。当前默认 `0.06m`，调大更快通过，调小能提高起脚横向一致性。
+- `align_yaw_tolerance_rad`：朝向容差。当前默认 `0.12rad`，调小会要求机器人更正对球/门。
+- `align_required_stable_frames`：连续多少帧都满足容差才认为 ALIGN 成功。当前默认 `3` 帧，调大更稳但更慢，调小更快但容易误判。
 
 ### ALIGN 踏步控制
 
@@ -114,8 +116,8 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 
 ### 感知有效性
 
-- `min_ball_confidence`：球检测置信度下限。误检多就调高，漏检多就调低。
-- `min_goal_confidence`：球门检测置信度下限。只有检测到球门且置信度足够时，主控才优先用球门和球的相对关系算朝向误差。
+- `min_ball_confidence`：球检测置信度下限。当前默认 `0.30`，误检多就调高，漏检多就调低。
+- `min_goal_confidence`：球门检测置信度下限。当前默认 `0.25`。只有检测到球门且置信度足够时，主控才优先用球门和球的相对关系算朝向误差。
 
 ### 射门 action
 

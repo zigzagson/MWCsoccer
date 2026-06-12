@@ -347,8 +347,6 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void handleStartBallTrack() {
-    publishVisionTrackCommand("START_BALL_TRACK");
-
     if (elapsedInState() >= post_track_settle_s_) {
       if (!validPerception()) {
         if (elapsedInState() > std::max(1.0, post_track_settle_s_ * 3.0)) {
@@ -400,7 +398,6 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void handleStopBallTrack() {
-    publishVisionTrackCommand("STOP_BALL_TRACK");
     transitionTo(State::READY_KICK, "vision tracking stopped");
   }
 
@@ -676,6 +673,11 @@ class SoccerBrainNode final : public rclcpp::Node {
     if (next == State::NAVIGATE_TO_POINT) {
       mode_ = "PENALTY_ATTACK";
       kick_goal_sent_ = false;
+    }
+    if (next == State::START_BALL_TRACK) {
+      publishVisionTrackCommand("START_BALL_TRACK");
+    } else if (next == State::STOP_BALL_TRACK) {
+      publishVisionTrackCommand("STOP_BALL_TRACK");
     }
 
     publishBehavior(stateName(next), detail);

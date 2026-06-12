@@ -20,21 +20,21 @@ soccer_brain_node:
 
     # State-machine timing.
     control_rate_hz: 20.0
-    nav_timeout_s: 25.0
-    nav_status_timeout_s: 1.0
-    align_timeout_s: 8.0
-    perception_timeout_s: 0.2
-    post_track_settle_s: 0.3
-    pre_kick_pause_s: 0.2
+    nav_timeout_s: 45.0
+    nav_status_timeout_s: 2.0
+    align_timeout_s: 20.0
+    perception_timeout_s: 0.6
+    post_track_settle_s: 1.0
+    pre_kick_pause_s: 0.5
 
     # ALIGN target and stability gate.
     # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
     align_target_ball_x_m: 0.22
     align_target_ball_y_m: 0.0
-    align_x_tolerance_m: 0.06
-    align_y_tolerance_m: 0.04
-    align_yaw_tolerance_rad: 0.08
-    align_required_stable_frames: 5
+    align_x_tolerance_m: 0.08
+    align_y_tolerance_m: 0.06
+    align_yaw_tolerance_rad: 0.12
+    align_required_stable_frames: 3
 
     # ALIGN stepping controller. The node enters align_obstacle_fsm_id before
     # sending these short SetVelocity steps.
@@ -48,8 +48,8 @@ soccer_brain_node:
     align_min_step_period_s: 0.10
 
     # Perception validity.
-    min_ball_confidence: 0.45
-    min_goal_confidence: 0.35
+    min_ball_confidence: 0.30
+    min_goal_confidence: 0.25
 
     # Whole-body kick action.
     kick_action_server: /whole_body/action_ctrl
