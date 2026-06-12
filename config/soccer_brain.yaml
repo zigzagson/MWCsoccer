@@ -5,7 +5,8 @@ soccer_brain_node:
     auto_start: true
 
     # Penalty attack request sent to /soccer/game_mode_cmd.
-    # goal_target: left positive, right negative, range [-1, 1].
+    # goal_target: left post -1, right post 1, range [-1, 1].
+    # Example: 0.3 means right of center.
     goal_target: 0.0
     nav_ball_distance_m: 0.75
 

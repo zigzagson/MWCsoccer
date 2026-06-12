@@ -65,25 +65,69 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 
 ## 参数文件
 
-主控参数统一放在 YAML 里，不需要改代码。模型和轨迹默认由 launch 根据包内 `config/` 自动拼接。
+主控参数统一放在 YAML 里，不需要改代码。正式启动默认读取 [mwc_soccer_control/config/soccer_brain.yaml](./mwc_soccer_control/config/soccer_brain.yaml)。模型和轨迹默认由 launch 根据包内 `config/` 自动拼接。
 
-关键参数如下：
+### 模式与射门目标
 
-- `align_obstacle_fsm_id: 812`
-- `align_restore_fsm_id: 802`
-- `kick_action_server: /whole_body/action_ctrl`
-- `enable_kick_action: true`
+- `start_mode`：启动后进入的模式。当前主控实现的是 `PENALTY_ATTACK`。
+- `auto_start`：是否启动节点后自动发布一次点球模式。现场联调通常保持 `true`；如果要外部上位机触发，可以改成 `false`。
+- `goal_target`：点球目标横向位置，左门柱为 `-1`，右门柱为 `1`。例如 `0.3` 表示中间偏右。这个值会原样发给导航模块，由导航基于 map 系下的球和球门坐标反算定点导航点。
+- `nav_ball_distance_m`：导航停在球前的距离。调大机器人离球更远，调小机器人更贴近球；太小会影响最后 ALIGN 和起脚空间。
 
-射门动作有两种配置方式：
+### Unitree 运控模式
 
-1. 直接写完整 JSON 到 `kick_action_params_json`
-2. 留空 `kick_action_params_json`，让 launch 从包内 `config/` 自动注入 `kick_model_path` 和 `kick_trajectory_path`
+- `unitree_network_interface`：Unitree SDK2 DDS 绑定网卡。为空时走默认配置；如果 DDS 发现网卡不对，再填实际网卡名。
+- `align_obstacle_fsm_id`：ALIGN 微调阶段切入的运控 FSM。当前使用 `812`，也就是越障模式踏步。
+- `align_restore_fsm_id`：ALIGN 结束后的恢复 FSM。当前使用 `802`，常规走跑模式。
+- `restore_fsm_after_align`：ALIGN 结束后是否恢复 FSM。实机建议保持 `true`。
+- `require_unitree_align_mode`：切换到 `812` 失败时是否直接报错。实机建议保持 `true`；纯流程测试可改成 `false`。
 
-示例：
+### 状态机时间
 
-```yaml
-由 launch 自动注入，不需要在 YAML 里手写
-```
+- `control_rate_hz`：主控状态机循环频率。默认 `20 Hz`，一般不用改。
+- `nav_timeout_s`：等待导航到点的最大时间。导航可能绕行或场地大时可调大。
+- `nav_status_timeout_s`：`/soccer/nav_status` 超时阈值。调小能更快发现导航掉线，调大能容忍短时抖动。
+- `align_timeout_s`：ALIGN 微调最大时间。太短可能还没对准就失败，太长会拖慢比赛流程。
+- `perception_timeout_s`：视觉感知超时阈值。视觉发布频率低时要适当调大。
+- `post_track_settle_s`：打开视觉跟踪后等待感知稳定的时间。画面刚切换时检测不稳，可以调大。
+- `pre_kick_pause_s`：READY_KICK 到真正发送射门 action 前的停顿。用于让机器人站稳。
+
+### ALIGN 目标与稳定判定
+
+- `align_target_ball_x_m`：期望球在 dummy/body 坐标系前方的距离。默认 `0.22 m`。
+- `align_target_ball_y_m`：期望球的横向偏移。默认 `0.0 m`，表示球在正前方。
+- `align_x_tolerance_m`：前后方向容差。调大更容易进入射门，调小对位更严格。
+- `align_y_tolerance_m`：左右方向容差。调大更快通过，调小能提高起脚横向一致性。
+- `align_yaw_tolerance_rad`：朝向容差。调小会要求机器人更正对球/门。
+- `align_required_stable_frames`：连续多少帧都满足容差才认为 ALIGN 成功。调大更稳但更慢，调小更快但容易误判。
+
+### ALIGN 踏步控制
+
+- `align_kx`：前后误差到踏步前后速度的比例系数。调大前后修正更快，过大会晃。
+- `align_ky`：横向误差到踏步横向速度的比例系数。右偏/左偏修正不够时优先调这个。
+- `align_kw`：朝向误差到角速度的比例系数。转向慢就调大，转向过冲就调小。
+- `align_max_vx`：ALIGN 前后速度上限。限制每次向前/后踏步速度。
+- `align_max_vy`：ALIGN 横向速度上限。限制左右踏步速度。
+- `align_max_wz`：ALIGN 角速度上限。限制原地转向速度。
+- `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。调大单步位移更大，调小更细。
+- `align_min_step_period_s`：两次踏步指令的最小间隔。调大动作更保守，调小响应更连续。
+
+### 感知有效性
+
+- `min_ball_confidence`：球检测置信度下限。误检多就调高，漏检多就调低。
+- `min_goal_confidence`：球门检测置信度下限。只有检测到球门且置信度足够时，主控才优先用球门和球的相对关系算朝向误差。
+
+### 射门 action
+
+- `kick_action_server`：whole-body action server 名称，默认 `/whole_body/action_ctrl`。
+- `kick_action_name`：发送给 whole-body 的动作名，同时作为 JSON 里的 `uuid` 和 `state_name`。
+- `enable_kick_action`：是否真的发送射门 action。闭环测试里会置为 `false`，实机射门保持 `true`。
+- `kick_server_timeout_s`：等待 action server 出现的时间。
+- `kick_result_timeout_s`：等待射门 action 返回结果的时间。
+- `kick_action_params_json`：完整 action JSON。非空时优先使用它，适合临时试验完整配置。
+- `kick_model_path` / `kick_trajectory_path`：模型和轨迹路径。正式 launch 默认从包内 `config/` 自动注入，不需要手写绝对路径。
+- `kick_policy_type`：whole-body 动作使用的策略类型，默认 `lingshu`。
+- `kick_end_behavior`：动作结束后的行为，默认 `switch_to_loco`。
 
 ## 闭环测试
 

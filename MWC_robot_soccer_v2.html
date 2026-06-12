@@ -565,7 +565,7 @@ string command              # START_BALL_TRACK, STOP_BALL_TRACK</code></pre>
       <pre><code># GameModeCommand
 std_msgs/Header header
 string mode              # IDLE, PENALTY_ATTACK, GOALKEEPER, CALIBRATION
-float32 goal_target       # only for PENALTY_ATTACK, left positive, right negative, range [-1, 1]
+float32 goal_target       # only for PENALTY_ATTACK, left post -1, right post 1, range [-1, 1]
 float32 nav_ball_distance_m # distance from fixed navigation point to ball
 bool reset_state
 
@@ -583,7 +583,7 @@ bool active</code></pre>
       <div class="flow">
         <div class="step">
           <strong>1. 发布点球模式与射门参数</strong>
-          主控发布 <code>/soccer/game_mode_cmd: PENALTY_ATTACK</code>，同时携带 <code>goal_target</code> 和 <code>nav_ball_distance_m</code>。<code>goal_target</code> 使用归一化球门横向坐标，右门柱为 <code>-1</code>，左门柱为 <code>1</code>，左侧为正、右侧为负。
+          主控发布 <code>/soccer/game_mode_cmd: PENALTY_ATTACK</code>，同时携带 <code>goal_target</code> 和 <code>nav_ball_distance_m</code>。<code>goal_target</code> 使用归一化球门横向坐标，左门柱为 <code>-1</code>，右门柱为 <code>1</code>，<code>0.3</code> 表示中间偏右。
         </div>
         <div class="step">
           <strong>2. 导航计算定点导航点</strong>
