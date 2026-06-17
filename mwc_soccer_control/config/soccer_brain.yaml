@@ -76,8 +76,10 @@ soccer_brain_node:
     # {"uuid": kick_action_name, "state_name": kick_action_name,
     #  "policy_type": kick_policy_type, "model": kick_model_path,
     #  "trajectory": kick_trajectory_path, "end_behavior": kick_end_behavior,
+    #  "quat_comp": kick_quat_comp,
     #  "allowed_from": ["PASSIVE", "LOCO", "FIXEDSTAND"]}
     kick_model_path: ""
     kick_trajectory_path: ""
     kick_policy_type: lingshu
     kick_end_behavior: switch_to_loco
+    kick_quat_comp: 0.0

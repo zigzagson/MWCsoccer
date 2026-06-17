@@ -167,6 +167,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<std::string>("kick_trajectory_path", "");
     declare_parameter<std::string>("kick_policy_type", "lingshu");
     declare_parameter<std::string>("kick_end_behavior", "switch_to_loco");
+    declare_parameter<double>("kick_quat_comp", 0.0);
     declare_parameter<std::string>("kick_action_server", "/whole_body/action_ctrl");
     declare_parameter<bool>("enable_kick_action", true);
     declare_parameter<double>("kick_server_timeout_s", 2.0);
@@ -244,6 +245,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     kick_trajectory_path_ = get_parameter("kick_trajectory_path").as_string();
     kick_policy_type_ = get_parameter("kick_policy_type").as_string();
     kick_end_behavior_ = get_parameter("kick_end_behavior").as_string();
+    kick_quat_comp_ = get_parameter("kick_quat_comp").as_double();
     kick_action_server_ = get_parameter("kick_action_server").as_string();
     enable_kick_action_ = get_parameter("enable_kick_action").as_bool();
     kick_server_timeout_s_ = get_parameter("kick_server_timeout_s").as_double();
@@ -876,6 +878,7 @@ class SoccerBrainNode final : public rclcpp::Node {
            << "\"model\":\"" << jsonEscape(kick_model_path_) << "\","
            << "\"trajectory\":\"" << jsonEscape(kick_trajectory_path_) << "\","
            << "\"end_behavior\":\"" << jsonEscape(kick_end_behavior_) << "\","
+           << "\"quat_comp\":" << kick_quat_comp_ << ","
            << "\"allowed_from\":[\"PASSIVE\",\"LOCO\",\"FIXEDSTAND\"]"
            << "}";
     goal.params = params.str();
@@ -1011,6 +1014,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   std::string kick_trajectory_path_;
   std::string kick_policy_type_ = "lingshu";
   std::string kick_end_behavior_ = "switch_to_loco";
+  double kick_quat_comp_ = 0.0;
   std::string kick_action_server_ = "/whole_body/action_ctrl";
   bool enable_kick_action_ = true;
   double kick_server_timeout_s_ = 2.0;

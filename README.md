@@ -138,6 +138,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `kick_model_path` / `kick_trajectory_path`：模型和轨迹路径。正式 launch 默认从包内 `config/` 自动注入，不需要手写绝对路径。
 - `kick_policy_type`：whole-body 动作使用的策略类型，默认 `lingshu`。
 - `kick_end_behavior`：动作结束后的行为，默认 `switch_to_loco`。
+- `kick_quat_comp`：自动生成 action JSON 时写入的 `quat_comp`，默认 `0.0`。
 
 ## 闭环测试
 
