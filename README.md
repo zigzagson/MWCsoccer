@@ -83,7 +83,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_restore_fsm_id`：ALIGN 结束后的恢复 FSM。当前使用 `802`，常规走跑模式。
 - `restore_fsm_after_align`：ALIGN 结束后是否恢复 FSM。实机建议保持 `true`。
 - `require_unitree_align_mode`：切换到 `812` 失败时是否直接报错。实机建议保持 `true`；纯流程测试可改成 `false`。
-- `align_use_continuous_gait`：ALIGN 微调阶段是否启用 `ContinuousGait(true)`。当前默认 `true`，用于让机器人在速度为 `0` 时也保持踏步；退出 ALIGN 时会发送 `ContinuousGait(false)`。
+- `align_use_continuous_gait`：ALIGN 微调阶段是否启用 `ContinuousGait(true)`。当前默认 `false`，避免 812 模式下速度为 `0` 时持续踏步；需要保持连续步态时可改成 `true`，退出 ALIGN 时会发送 `ContinuousGait(false)`。
 
 ### 状态机时间
 
@@ -138,7 +138,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `kick_model_path` / `kick_trajectory_path`：模型和轨迹路径。正式 launch 默认从包内 `config/` 自动注入，不需要手写绝对路径。
 - `kick_policy_type`：whole-body 动作使用的策略类型，默认 `lingshu`。
 - `kick_end_behavior`：动作结束后的行为，默认 `switch_to_loco`。
-- `kick_quat_comp`：自动生成 action JSON 时写入的 `quat_comp`，默认 `0.0`。
+- `kick_quat_comp`：自动生成 action JSON 时写入的 `quat_comp`，默认 `-0.2`。
 
 ## 闭环测试
 

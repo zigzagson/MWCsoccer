@@ -126,7 +126,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<int>("align_restore_fsm_id", 802);
     declare_parameter<bool>("restore_fsm_after_align", true);
     declare_parameter<bool>("require_unitree_align_mode", true);
-    declare_parameter<bool>("align_use_continuous_gait", true);
+    declare_parameter<bool>("align_use_continuous_gait", false);
 
     declare_parameter<double>("control_rate_hz", 20.0);
     declare_parameter<double>("nav_timeout_s", 25.0);
@@ -167,7 +167,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<std::string>("kick_trajectory_path", "");
     declare_parameter<std::string>("kick_policy_type", "lingshu");
     declare_parameter<std::string>("kick_end_behavior", "switch_to_loco");
-    declare_parameter<double>("kick_quat_comp", 0.0);
+    declare_parameter<double>("kick_quat_comp", -0.2);
     declare_parameter<std::string>("kick_action_server", "/whole_body/action_ctrl");
     declare_parameter<bool>("enable_kick_action", true);
     declare_parameter<double>("kick_server_timeout_s", 2.0);
@@ -621,10 +621,12 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void stopObstacleStep() {
-    if (!loco_client_ || (!obstacle_mode_active_ && !continuous_gait_active_)) {
+    if (!loco_client_ || (!obstacle_mode_active_ && !continuous_gait_active_) ||
+        align_stop_sent_) {
       return;
     }
     const int32_t ret = loco_client_->SetVelocity(0.0f, 0.0f, 0.0f, 0.1f);
+    align_stop_sent_ = true;
     if (ret != 0) {
       RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 1000,
@@ -653,6 +655,7 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     last_step_time_ = now();
     last_step_perception_time_ = last_perception_time_;
+    align_stop_sent_ = false;
     return true;
   }
 
@@ -897,6 +900,7 @@ class SoccerBrainNode final : public rclcpp::Node {
       last_valid_align_ball_x_.reset();
       last_step_time_.reset();
       last_step_perception_time_.reset();
+      align_stop_sent_ = false;
     }
 
     if (next == State::NAVIGATE_TO_POINT) {
@@ -973,7 +977,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   int align_restore_fsm_id_ = 802;
   bool restore_fsm_after_align_ = true;
   bool require_unitree_align_mode_ = true;
-  bool align_use_continuous_gait_ = true;
+  bool align_use_continuous_gait_ = false;
 
   double control_rate_hz_ = 20.0;
   double nav_timeout_s_ = 25.0;
@@ -1014,7 +1018,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   std::string kick_trajectory_path_;
   std::string kick_policy_type_ = "lingshu";
   std::string kick_end_behavior_ = "switch_to_loco";
-  double kick_quat_comp_ = 0.0;
+  double kick_quat_comp_ = -0.2;
   std::string kick_action_server_ = "/whole_body/action_ctrl";
   bool enable_kick_action_ = true;
   double kick_server_timeout_s_ = 2.0;
@@ -1029,6 +1033,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   int stable_align_frames_ = 0;
   bool obstacle_mode_active_ = false;
   bool continuous_gait_active_ = false;
+  bool align_stop_sent_ = false;
   bool kick_goal_sent_ = false;
   std::optional<int> saved_fsm_id_;
 

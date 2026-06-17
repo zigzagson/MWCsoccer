@@ -17,7 +17,7 @@ soccer_brain_node:
     align_restore_fsm_id: 802
     restore_fsm_after_align: true
     require_unitree_align_mode: true
-    align_use_continuous_gait: true
+    align_use_continuous_gait: false
 
     # State-machine timing.
     control_rate_hz: 20.0
@@ -82,4 +82,4 @@ soccer_brain_node:
     kick_trajectory_path: ""
     kick_policy_type: lingshu
     kick_end_behavior: switch_to_loco
-    kick_quat_comp: 0.0
+    kick_quat_comp: -0.2
