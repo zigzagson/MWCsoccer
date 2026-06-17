@@ -83,6 +83,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_restore_fsm_id`：ALIGN 结束后的恢复 FSM。当前使用 `802`，常规走跑模式。
 - `restore_fsm_after_align`：ALIGN 结束后是否恢复 FSM。实机建议保持 `true`。
 - `require_unitree_align_mode`：切换到 `812` 失败时是否直接报错。实机建议保持 `true`；纯流程测试可改成 `false`。
+- `align_use_continuous_gait`：ALIGN 微调阶段是否启用 `ContinuousGait(true)`。当前默认 `true`，用于让机器人在速度为 `0` 时也保持踏步；退出 ALIGN 时会发送 `ContinuousGait(false)`。
 
 ### 状态机时间
 
@@ -98,6 +99,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 
 ### ALIGN 目标与稳定判定
 
+- `enable_align`：是否启用到点后的视觉微调。当前默认 `true`；设为 `false` 时打开视觉跟踪并等待 `post_track_settle_s` 后直接开踢，不进入 ALIGN。
 - `align_target_ball_x_m`：期望球在 dummy/body 坐标系前方的距离。默认 `0.22 m`。
 - `align_target_ball_y_m`：期望球的横向偏移。默认 `0.0 m`，表示球在正前方。
 - `align_x_tolerance_m`：前后方向容差。当前默认 `0.08m`，调大更容易进入射门，调小对位更严格。

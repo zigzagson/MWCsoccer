@@ -17,6 +17,7 @@ soccer_brain_node:
     align_restore_fsm_id: 802
     restore_fsm_after_align: true
     require_unitree_align_mode: true
+    align_use_continuous_gait: true
 
     # State-machine timing.
     control_rate_hz: 20.0
@@ -31,6 +32,7 @@ soccer_brain_node:
 
     # ALIGN target and stability gate.
     # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
+    enable_align: true
     align_target_ball_x_m: 0.22
     align_target_ball_y_m: 0.0
     align_x_tolerance_m: 0.08
