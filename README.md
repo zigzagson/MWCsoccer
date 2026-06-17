@@ -117,9 +117,9 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_kx`：前后误差到踏步前后速度的比例系数。调大前后修正更快，过大会晃。
 - `align_ky`：横向误差到踏步横向速度的比例系数。右偏/左偏修正不够时优先调这个。
 - `align_kw`：朝向误差到角速度的比例系数。转向慢就调大，转向过冲就调小。
-- `align_max_vx`：ALIGN 前后速度上限。限制每次向前/后踏步速度。
-- `align_max_vy`：ALIGN 横向速度上限。限制左右踏步速度。
-- `align_max_wz`：ALIGN 角速度上限。限制原地转向速度。
+- `align_max_vx`：ALIGN 前后速度上限。当前默认 `0.50`，限制每次向前/后踏步速度。
+- `align_max_vy`：ALIGN 横向速度上限。当前默认 `0.50`，限制左右踏步速度。
+- `align_max_wz`：ALIGN 角速度上限。当前默认 `0.50`，限制原地转向速度。
 - `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。当前默认 `0.45s`，调大单次修正更明显。
 - `align_min_step_period_s`：每次速度指令结束后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到新的 `/soccer/perception`，才会计算并发送下一次修正。
 

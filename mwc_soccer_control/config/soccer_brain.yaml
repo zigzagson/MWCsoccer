@@ -51,9 +51,9 @@ soccer_brain_node:
     align_kx: 0.45
     align_ky: 0.55
     align_kw: 0.90
-    align_max_vx: 0.12
-    align_max_vy: 0.10
-    align_max_wz: 0.25
+    align_max_vx: 0.50
+    align_max_vy: 0.50
+    align_max_wz: 0.50
     align_step_duration_s: 0.45
     align_min_step_period_s: 0.15
 

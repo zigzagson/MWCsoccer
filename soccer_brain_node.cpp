@@ -168,9 +168,9 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_kx", 0.45);
     declare_parameter<double>("align_ky", 0.55);
     declare_parameter<double>("align_kw", 0.9);
-    declare_parameter<double>("align_max_vx", 0.12);
-    declare_parameter<double>("align_max_vy", 0.10);
-    declare_parameter<double>("align_max_wz", 0.25);
+    declare_parameter<double>("align_max_vx", 0.50);
+    declare_parameter<double>("align_max_vy", 0.50);
+    declare_parameter<double>("align_max_wz", 0.50);
     declare_parameter<double>("align_step_duration_s", 0.45);
     declare_parameter<double>("align_min_step_period_s", 0.15);
 
@@ -1165,9 +1165,9 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_kx_ = 0.45;
   double align_ky_ = 0.55;
   double align_kw_ = 0.9;
-  double align_max_vx_ = 0.12;
-  double align_max_vy_ = 0.10;
-  double align_max_wz_ = 0.25;
+  double align_max_vx_ = 0.50;
+  double align_max_vy_ = 0.50;
+  double align_max_wz_ = 0.50;
   double align_step_duration_s_ = 0.45;
   double align_min_step_period_s_ = 0.15;
 
