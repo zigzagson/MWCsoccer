@@ -438,6 +438,10 @@ class SoccerBrainNode final : public rclcpp::Node {
   void handleStartBallTrack() {
     if (elapsedInState() >= post_track_settle_s_) {
       if (!enable_align_) {
+        RCLCPP_INFO(
+            get_logger(),
+            "align skipped: enable_align=false | %s",
+            perceptionSummary().c_str());
         transitionTo(State::STOP_BALL_TRACK, "align disabled");
         return;
       }
@@ -447,6 +451,11 @@ class SoccerBrainNode final : public rclcpp::Node {
             std::max(post_track_settle_s_, ball_perception_wait_timeout_s_);
         if (elapsedInState() > wait_timeout) {
           if (kick_on_ball_perception_timeout_) {
+            RCLCPP_WARN(
+                get_logger(),
+                "align skipped: no valid ball perception after %.3fs "
+                "wait_timeout=%.3fs | %s",
+                elapsedInState(), wait_timeout, perceptionSummary().c_str());
             transitionTo(
                 State::STOP_BALL_TRACK,
                 "ball perception unavailable after track start; kick fallback");
@@ -456,6 +465,11 @@ class SoccerBrainNode final : public rclcpp::Node {
         }
         return;
       }
+      const auto start_command = computeAlignCommand(*last_perception_);
+      RCLCPP_INFO(
+          get_logger(),
+          "align entry check: valid perception before ALIGN | %s",
+          alignCommandSummary(start_command, *last_perception_).c_str());
       if (!enterObstacleSteppingMode()) {
         transitionToError("failed to enter obstacle stepping fsm");
         return;
@@ -467,6 +481,11 @@ class SoccerBrainNode final : public rclcpp::Node {
   void handleAlign() {
     if (elapsedInState() > align_timeout_s_) {
       stopObstacleStep();
+      RCLCPP_WARN(
+          get_logger(),
+          "align ending: timeout after %.3fs | last_error=%s | %s",
+          elapsedInState(), lastAlignCommandSummary().c_str(),
+          perceptionSummary().c_str());
       if (kick_on_align_timeout_) {
         if (!restoreFsmAfterAlign()) {
           transitionToError("align timeout and failed to restore fsm");
@@ -483,7 +502,21 @@ class SoccerBrainNode final : public rclcpp::Node {
     if (!validPerception()) {
       stable_align_frames_ = 0;
       stopObstacleStep();
+      if (!last_logged_align_lost_perception_time_ ||
+          !last_perception_time_ ||
+          (*last_perception_time_ -
+           *last_logged_align_lost_perception_time_).seconds() > 0.0) {
+        RCLCPP_WARN(
+            get_logger(),
+            "align perception lost: last_error=%s | %s",
+            lastAlignCommandSummary().c_str(), perceptionSummary().c_str());
+        last_logged_align_lost_perception_time_ = last_perception_time_;
+      }
       if (shouldKickAfterAlignBallLoss()) {
+        RCLCPP_WARN(
+            get_logger(),
+            "align ending: ball lost near feet; kick fallback | last_error=%s",
+            lastAlignCommandSummary().c_str());
         if (!restoreFsmAfterAlign()) {
           transitionToError("ball lost near feet but failed to restore fsm");
           return;
@@ -496,6 +529,9 @@ class SoccerBrainNode final : public rclcpp::Node {
     const auto command = computeAlignCommand(*last_perception_);
     last_valid_align_command_ = command;
     last_valid_align_ball_x_ = last_perception_->ball.point.x;
+    RCLCPP_INFO(
+        get_logger(), "align realtime error: %s",
+        alignCommandSummary(command, *last_perception_).c_str());
     publishBehavior(
         "ALIGN",
         "x_err=" + std::to_string(command.x_error) +
@@ -513,6 +549,10 @@ class SoccerBrainNode final : public rclcpp::Node {
           command.y_error, command.yaw_error, last_perception_->ball.point.x,
           last_perception_->ball.point.y, last_perception_->ball.point.z);
       if (stable_align_frames_ >= align_required_stable_frames_) {
+        RCLCPP_INFO(
+            get_logger(),
+            "align ending: stable within tolerance | %s",
+            alignCommandSummary(command, *last_perception_).c_str());
         if (!restoreFsmAfterAlign()) {
           transitionToError("align stable but failed to restore fsm");
           return;
@@ -755,6 +795,49 @@ class SoccerBrainNode final : public rclcpp::Node {
     return command;
   }
 
+  std::string alignCommandSummary(
+      const AlignCommand& command,
+      const SoccerPerception& perception) const {
+    std::ostringstream out;
+    out << "x_err=" << command.x_error
+        << " y_err=" << command.y_error
+        << " yaw_err=" << command.yaw_error
+        << " within_tolerance=" << boolText(command.within_tolerance)
+        << " stable_frames=" << stable_align_frames_ << "/"
+        << align_required_stable_frames_
+        << " cmd_v=(" << command.vx << "," << command.vy << ","
+        << command.wz << ")"
+        << " ball=(" << perception.ball.point.x << ","
+        << perception.ball.point.y << "," << perception.ball.point.z << ")"
+        << " target=(" << align_target_ball_x_m_ << ","
+        << align_target_ball_y_m_ << ")"
+        << " tolerances=(" << align_x_tolerance_m_ << ","
+        << align_y_tolerance_m_ << "," << align_yaw_tolerance_rad_ << ")";
+    return out.str();
+  }
+
+  std::string lastAlignCommandSummary() const {
+    if (!last_valid_align_command_) {
+      return "none";
+    }
+
+    std::ostringstream out;
+    out << "x_err=" << last_valid_align_command_->x_error
+        << " y_err=" << last_valid_align_command_->y_error
+        << " yaw_err=" << last_valid_align_command_->yaw_error
+        << " within_tolerance="
+        << boolText(last_valid_align_command_->within_tolerance)
+        << " stable_frames=" << stable_align_frames_ << "/"
+        << align_required_stable_frames_
+        << " last_ball_x="
+        << (last_valid_align_ball_x_ ? std::to_string(*last_valid_align_ball_x_)
+                                     : "unknown")
+        << " cmd_v=(" << last_valid_align_command_->vx << ","
+        << last_valid_align_command_->vy << ","
+        << last_valid_align_command_->wz << ")";
+    return out.str();
+  }
+
   bool shouldKickAfterAlignBallLoss() const {
     if (!kick_on_align_ball_lost_near_feet_ ||
         !last_valid_align_command_ ||
@@ -976,6 +1059,7 @@ class SoccerBrainNode final : public rclcpp::Node {
       last_valid_align_ball_x_.reset();
       last_step_time_.reset();
       last_step_perception_time_.reset();
+      last_logged_align_lost_perception_time_.reset();
       align_stop_sent_ = false;
     }
 
@@ -1105,6 +1189,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   rclcpp::Time state_enter_time_;
   std::optional<rclcpp::Time> last_step_time_;
   std::optional<rclcpp::Time> last_step_perception_time_;
+  std::optional<rclcpp::Time> last_logged_align_lost_perception_time_;
   std::optional<AlignCommand> last_valid_align_command_;
   std::optional<double> last_valid_align_ball_x_;
   int stable_align_frames_ = 0;
