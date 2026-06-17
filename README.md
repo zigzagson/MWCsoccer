@@ -92,6 +92,8 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_timeout_s`：ALIGN 微调最大时间。当前默认 `20.0s`，用于避免视觉/踏步慢时过早失败。
 - `perception_timeout_s`：视觉感知超时阈值。当前默认 `0.6s`，用于容忍相机、SDK 推理或 TF 短时延迟。
 - `post_track_settle_s`：打开视觉跟踪后等待感知稳定的时间。当前默认 `1.0s`，避免刚打开跟踪时还没出有效球坐标就报错。
+- `ball_perception_wait_timeout_s`：打开视觉跟踪后最长等待有效球感知的时间。当前默认 `8.0s`，超过后按 `kick_on_ball_perception_timeout` 决定直接开踢还是进入 `ERROR`。
+- `kick_on_ball_perception_timeout`：打开视觉跟踪后一直没有有效球感知时是否跳过 ALIGN 直接开踢。当前默认 `true`。
 - `pre_kick_pause_s`：READY_KICK 到真正发送射门 action 前的停顿。当前默认 `0.5s`，用于让机器人站稳。
 
 ### ALIGN 目标与稳定判定
@@ -102,6 +104,10 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_y_tolerance_m`：左右方向容差。当前默认 `0.06m`，调大更快通过，调小能提高起脚横向一致性。
 - `align_yaw_tolerance_rad`：朝向容差。当前默认 `0.12rad`，调小会要求机器人更正对球/门。
 - `align_required_stable_frames`：连续多少帧都满足容差才认为 ALIGN 成功。当前默认 `3` 帧，调大更稳但更慢，调小更快但容易误判。
+- `kick_on_align_ball_lost_near_feet`：ALIGN 中如果最后一次有效球坐标已经接近脚前盲区，随后丢球时是否直接开踢。当前默认 `true`。
+- `align_lost_ball_kick_x_m`：近脚丢球开踢的前向距离阈值。当前默认 `0.45m`，用于覆盖相机约 `0.40m` 以内看不到球的情况。
+- `align_lost_ball_kick_y_tolerance_m`：近脚丢球开踢时允许的最后横向误差。当前默认 `0.10m`。
+- `align_lost_ball_kick_yaw_tolerance_rad`：近脚丢球开踢时允许的最后朝向误差。当前默认 `0.18rad`。
 
 ### ALIGN 踏步控制
 

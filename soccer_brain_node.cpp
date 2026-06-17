@@ -34,6 +34,10 @@ std::string nowDetail(double timestamp_seconds, const std::string& detail) {
   return detail + " t=" + std::to_string(timestamp_seconds);
 }
 
+const char* boolText(bool value) {
+  return value ? "true" : "false";
+}
+
 std::string jsonEscape(const std::string& value) {
   std::ostringstream out;
   for (const char c : value) {
@@ -129,6 +133,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_timeout_s", 8.0);
     declare_parameter<double>("perception_timeout_s", 0.2);
     declare_parameter<double>("post_track_settle_s", 0.3);
+    declare_parameter<double>("ball_perception_wait_timeout_s", 3.0);
+    declare_parameter<bool>("kick_on_ball_perception_timeout", true);
     declare_parameter<double>("pre_kick_pause_s", 0.2);
 
     declare_parameter<double>("align_target_ball_x_m", 0.22);
@@ -137,6 +143,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_y_tolerance_m", 0.04);
     declare_parameter<double>("align_yaw_tolerance_rad", 0.08);
     declare_parameter<int>("align_required_stable_frames", 5);
+    declare_parameter<bool>("kick_on_align_ball_lost_near_feet", true);
+    declare_parameter<double>("align_lost_ball_kick_x_m", 0.45);
+    declare_parameter<double>("align_lost_ball_kick_y_tolerance_m", 0.10);
+    declare_parameter<double>("align_lost_ball_kick_yaw_tolerance_rad", 0.18);
 
     declare_parameter<double>("align_kx", 0.45);
     declare_parameter<double>("align_ky", 0.55);
@@ -184,6 +194,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     align_timeout_s_ = get_parameter("align_timeout_s").as_double();
     perception_timeout_s_ = get_parameter("perception_timeout_s").as_double();
     post_track_settle_s_ = get_parameter("post_track_settle_s").as_double();
+    ball_perception_wait_timeout_s_ =
+        get_parameter("ball_perception_wait_timeout_s").as_double();
+    kick_on_ball_perception_timeout_ =
+        get_parameter("kick_on_ball_perception_timeout").as_bool();
     pre_kick_pause_s_ = get_parameter("pre_kick_pause_s").as_double();
 
     align_target_ball_x_m_ =
@@ -196,6 +210,14 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter("align_yaw_tolerance_rad").as_double();
     align_required_stable_frames_ =
         static_cast<int>(get_parameter("align_required_stable_frames").as_int());
+    kick_on_align_ball_lost_near_feet_ =
+        get_parameter("kick_on_align_ball_lost_near_feet").as_bool();
+    align_lost_ball_kick_x_m_ =
+        get_parameter("align_lost_ball_kick_x_m").as_double();
+    align_lost_ball_kick_y_tolerance_m_ =
+        get_parameter("align_lost_ball_kick_y_tolerance_m").as_double();
+    align_lost_ball_kick_yaw_tolerance_rad_ =
+        get_parameter("align_lost_ball_kick_yaw_tolerance_rad").as_double();
 
     align_kx_ = get_parameter("align_kx").as_double();
     align_ky_ = get_parameter("align_ky").as_double();
@@ -272,6 +294,16 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void onNavStatus(const NavStatus::SharedPtr msg) {
+    RCLCPP_INFO(
+        get_logger(),
+        "nav_status rx: mode=%s nav_alive=%s perception_alive=%s "
+        "navigating_to_point=%s target_reached=%s detail=%s",
+        msg->mode.c_str(),
+        boolText(msg->nav_alive),
+        boolText(msg->perception_alive),
+        boolText(msg->navigating_to_point),
+        boolText(msg->target_reached),
+        msg->detail.c_str());
     last_nav_status_ = msg;
     last_nav_status_time_ = now();
   }
@@ -349,8 +381,16 @@ class SoccerBrainNode final : public rclcpp::Node {
   void handleStartBallTrack() {
     if (elapsedInState() >= post_track_settle_s_) {
       if (!validPerception()) {
-        if (elapsedInState() > std::max(1.0, post_track_settle_s_ * 3.0)) {
-          transitionToError("ball perception unavailable after track start");
+        const double wait_timeout =
+            std::max(post_track_settle_s_, ball_perception_wait_timeout_s_);
+        if (elapsedInState() > wait_timeout) {
+          if (kick_on_ball_perception_timeout_) {
+            transitionTo(
+                State::STOP_BALL_TRACK,
+                "ball perception unavailable after track start; kick fallback");
+          } else {
+            transitionToError("ball perception unavailable after track start");
+          }
         }
         return;
       }
@@ -373,10 +413,16 @@ class SoccerBrainNode final : public rclcpp::Node {
     if (!validPerception()) {
       stable_align_frames_ = 0;
       stopObstacleStep();
+      if (shouldKickAfterAlignBallLoss()) {
+        restoreFsmAfterAlign();
+        transitionTo(State::STOP_BALL_TRACK, "ball lost near feet; kick fallback");
+      }
       return;
     }
 
     const auto command = computeAlignCommand(*last_perception_);
+    last_valid_align_command_ = command;
+    last_valid_align_ball_x_ = last_perception_->ball.point.x;
     publishBehavior(
         "ALIGN",
         "x_err=" + std::to_string(command.x_error) +
@@ -526,6 +572,20 @@ class SoccerBrainNode final : public rclcpp::Node {
     return command;
   }
 
+  bool shouldKickAfterAlignBallLoss() const {
+    if (!kick_on_align_ball_lost_near_feet_ ||
+        !last_valid_align_command_ ||
+        !last_valid_align_ball_x_) {
+      return false;
+    }
+
+    return *last_valid_align_ball_x_ <= align_lost_ball_kick_x_m_ &&
+           std::abs(last_valid_align_command_->y_error) <=
+               align_lost_ball_kick_y_tolerance_m_ &&
+           std::abs(last_valid_align_command_->yaw_error) <=
+               align_lost_ball_kick_yaw_tolerance_rad_;
+  }
+
   double computeYawError(const SoccerPerception& perception) const {
     const auto& ball = perception.ball.point;
     if (perception.image_has_goal &&
@@ -553,6 +613,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     msg.header.stamp = now();
     msg.command = command;
     vision_track_pub_->publish(msg);
+    RCLCPP_INFO(get_logger(), "vision_track_cmd sent: %s", command.c_str());
   }
 
   void publishBehavior(const std::string& state, const std::string& detail) {
@@ -565,6 +626,43 @@ class SoccerBrainNode final : public rclcpp::Node {
     msg.active = state_ != State::IDLE && state_ != State::FINISH &&
                  state_ != State::ERROR;
     behavior_pub_->publish(msg);
+  }
+
+  std::string navStatusSummary() const {
+    if (!last_nav_status_ || !last_nav_status_time_) {
+      return "nav_status=none";
+    }
+
+    std::ostringstream out;
+    out << "nav_status_age=" << (now() - *last_nav_status_time_).seconds()
+        << "s mode=" << last_nav_status_->mode
+        << " nav_alive=" << boolText(last_nav_status_->nav_alive)
+        << " perception_alive="
+        << boolText(last_nav_status_->perception_alive)
+        << " navigating_to_point="
+        << boolText(last_nav_status_->navigating_to_point)
+        << " target_reached=" << boolText(last_nav_status_->target_reached)
+        << " detail=" << last_nav_status_->detail;
+    return out.str();
+  }
+
+  std::string perceptionSummary() const {
+    if (!last_perception_ || !last_perception_time_) {
+      return "perception=none";
+    }
+
+    std::ostringstream out;
+    out << "perception_age=" << (now() - *last_perception_time_).seconds()
+        << "s image_has_ball=" << boolText(last_perception_->image_has_ball)
+        << " transform_valid=" << boolText(last_perception_->transform_valid)
+        << " ball_conf=" << last_perception_->ball_confidence
+        << " ball=(" << last_perception_->ball.point.x
+        << "," << last_perception_->ball.point.y
+        << "," << last_perception_->ball.point.z
+        << ") image_has_goal=" << boolText(last_perception_->image_has_goal)
+        << " goal_conf=" << last_perception_->goal_confidence
+        << " detail=" << last_perception_->detail;
+    return out.str();
   }
 
   float progressForState() const {
@@ -666,9 +764,16 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void transitionTo(State next, const std::string& detail) {
+    const auto previous = state_;
+    const double previous_elapsed = elapsedInState();
     state_ = next;
     state_enter_time_ = now();
     stable_align_frames_ = 0;
+
+    if (next == State::START_BALL_TRACK || next == State::ALIGN) {
+      last_valid_align_command_.reset();
+      last_valid_align_ball_x_.reset();
+    }
 
     if (next == State::NAVIGATE_TO_POINT) {
       mode_ = "PENALTY_ATTACK";
@@ -682,18 +787,26 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     publishBehavior(stateName(next), detail);
     RCLCPP_INFO(
-        get_logger(), "state -> %s: %s", stateName(next).c_str(),
-        detail.c_str());
+        get_logger(),
+        "state transition: %s -> %s after %.3fs detail=%s | %s | %s",
+        stateName(previous).c_str(), stateName(next).c_str(), previous_elapsed,
+        detail.c_str(), navStatusSummary().c_str(), perceptionSummary().c_str());
   }
 
   void transitionToError(const std::string& detail) {
+    const auto previous = state_;
+    const double previous_elapsed = elapsedInState();
     stopObstacleStep();
     restoreFsmAfterAlign();
     state_ = State::ERROR;
     state_enter_time_ = now();
     publishVisionTrackCommand("STOP_BALL_TRACK");
     publishBehavior("ERROR", detail);
-    RCLCPP_ERROR(get_logger(), "ERROR: %s", detail.c_str());
+    RCLCPP_ERROR(
+        get_logger(),
+        "state transition: %s -> ERROR after %.3fs detail=%s | %s | %s",
+        stateName(previous).c_str(), previous_elapsed, detail.c_str(),
+        navStatusSummary().c_str(), perceptionSummary().c_str());
   }
 
   std::string stateName(State state) const {
@@ -743,6 +856,8 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_timeout_s_ = 8.0;
   double perception_timeout_s_ = 0.2;
   double post_track_settle_s_ = 0.3;
+  double ball_perception_wait_timeout_s_ = 3.0;
+  bool kick_on_ball_perception_timeout_ = true;
   double pre_kick_pause_s_ = 0.2;
 
   double align_target_ball_x_m_ = 0.22;
@@ -751,6 +866,10 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_y_tolerance_m_ = 0.04;
   double align_yaw_tolerance_rad_ = 0.08;
   int align_required_stable_frames_ = 5;
+  bool kick_on_align_ball_lost_near_feet_ = true;
+  double align_lost_ball_kick_x_m_ = 0.45;
+  double align_lost_ball_kick_y_tolerance_m_ = 0.10;
+  double align_lost_ball_kick_yaw_tolerance_rad_ = 0.18;
 
   double align_kx_ = 0.45;
   double align_ky_ = 0.55;
@@ -777,6 +896,8 @@ class SoccerBrainNode final : public rclcpp::Node {
   State state_ = State::IDLE;
   rclcpp::Time state_enter_time_;
   std::optional<rclcpp::Time> last_step_time_;
+  std::optional<AlignCommand> last_valid_align_command_;
+  std::optional<double> last_valid_align_ball_x_;
   int stable_align_frames_ = 0;
   bool obstacle_mode_active_ = false;
   bool kick_goal_sent_ = false;

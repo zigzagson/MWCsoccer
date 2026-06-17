@@ -25,6 +25,8 @@ soccer_brain_node:
     align_timeout_s: 20.0
     perception_timeout_s: 0.6
     post_track_settle_s: 1.0
+    ball_perception_wait_timeout_s: 8.0
+    kick_on_ball_perception_timeout: true
     pre_kick_pause_s: 0.5
 
     # ALIGN target and stability gate.
@@ -35,6 +37,10 @@ soccer_brain_node:
     align_y_tolerance_m: 0.06
     align_yaw_tolerance_rad: 0.12
     align_required_stable_frames: 3
+    kick_on_align_ball_lost_near_feet: true
+    align_lost_ball_kick_x_m: 0.45
+    align_lost_ball_kick_y_tolerance_m: 0.10
+    align_lost_ball_kick_yaw_tolerance_rad: 0.18
 
     # ALIGN stepping controller. The node enters align_obstacle_fsm_id before
     # sending these short SetVelocity steps.
