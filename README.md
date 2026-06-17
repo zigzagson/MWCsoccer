@@ -111,7 +111,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_lost_ball_kick_y_tolerance_m`：近脚丢球开踢时允许的最后横向误差。当前默认 `0.10m`。
 - `align_lost_ball_kick_yaw_tolerance_rad`：近脚丢球开踢时允许的最后朝向误差。当前默认 `0.18rad`。
 
-### ALIGN 踏步控制
+### ALIGN 微调控制
 
 - `align_kx`：前后误差到踏步前后速度的比例系数。调大前后修正更快，过大会晃。
 - `align_ky`：横向误差到踏步横向速度的比例系数。右偏/左偏修正不够时优先调这个。
@@ -119,8 +119,8 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_max_vx`：ALIGN 前后速度上限。限制每次向前/后踏步速度。
 - `align_max_vy`：ALIGN 横向速度上限。限制左右踏步速度。
 - `align_max_wz`：ALIGN 角速度上限。限制原地转向速度。
-- `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。调大单步位移更大，调小更细。
-- `align_min_step_period_s`：两次踏步指令的最小间隔。调大动作更保守，调小响应更连续。
+- `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。当前默认 `0.45s`，调大单次修正更明显。
+- `align_min_step_period_s`：每次速度指令结束后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到新的 `/soccer/perception`，才会计算并发送下一次修正。
 
 ### 感知有效性
 

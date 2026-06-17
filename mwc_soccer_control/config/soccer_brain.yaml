@@ -44,16 +44,17 @@ soccer_brain_node:
     align_lost_ball_kick_y_tolerance_m: 0.10
     align_lost_ball_kick_yaw_tolerance_rad: 0.18
 
-    # ALIGN stepping controller. The node enters align_obstacle_fsm_id before
-    # sending these short SetVelocity steps.
+    # ALIGN correction controller. Each SetVelocity command runs once, then the
+    # node waits for the command duration, a settle period, and a fresh perception
+    # sample before sending the next correction.
     align_kx: 0.45
     align_ky: 0.55
     align_kw: 0.90
     align_max_vx: 0.12
     align_max_vy: 0.10
     align_max_wz: 0.25
-    align_step_duration_s: 0.12
-    align_min_step_period_s: 0.10
+    align_step_duration_s: 0.45
+    align_min_step_period_s: 0.15
 
     # Perception validity.
     min_ball_confidence: 0.30

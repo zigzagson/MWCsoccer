@@ -156,8 +156,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_max_vx", 0.12);
     declare_parameter<double>("align_max_vy", 0.10);
     declare_parameter<double>("align_max_wz", 0.25);
-    declare_parameter<double>("align_step_duration_s", 0.12);
-    declare_parameter<double>("align_min_step_period_s", 0.10);
+    declare_parameter<double>("align_step_duration_s", 0.45);
+    declare_parameter<double>("align_min_step_period_s", 0.15);
 
     declare_parameter<double>("min_ball_confidence", 0.45);
     declare_parameter<double>("min_goal_confidence", 0.35);
@@ -491,6 +491,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     }
 
     stable_align_frames_ = 0;
+    if (!readyForNextAlignCorrection()) {
+      return;
+    }
+
     if (sendObstacleStep(command.vx, command.vy, command.wz)) {
       RCLCPP_INFO(
           get_logger(),
@@ -508,7 +512,6 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void handleReadyKick() {
-    stopObstacleStep();
     if (elapsedInState() >= pre_kick_pause_s_) {
       if (!enable_kick_action_) {
         transitionTo(State::FINISH, "kick action disabled");
@@ -616,7 +619,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void stopObstacleStep() {
-    if (!loco_client_) {
+    if (!loco_client_ || (!obstacle_mode_active_ && !continuous_gait_active_)) {
       return;
     }
     const int32_t ret = loco_client_->SetVelocity(0.0f, 0.0f, 0.0f, 0.1f);
@@ -636,12 +639,6 @@ class SoccerBrainNode final : public rclcpp::Node {
       return false;
     }
 
-    const auto t = now();
-    if (last_step_time_ &&
-        (t - *last_step_time_).seconds() < align_min_step_period_s_) {
-      return false;
-    }
-
     const int32_t ret = loco_client_->SetVelocity(
         static_cast<float>(vx), static_cast<float>(vy),
         static_cast<float>(wz), static_cast<float>(align_step_duration_s_));
@@ -652,8 +649,27 @@ class SoccerBrainNode final : public rclcpp::Node {
       return false;
     }
 
-    last_step_time_ = t;
+    last_step_time_ = now();
+    last_step_perception_time_ = last_perception_time_;
     return true;
+  }
+
+  bool readyForNextAlignCorrection() const {
+    if (!last_step_time_) {
+      return true;
+    }
+
+    const double wait_s = align_step_duration_s_ + align_min_step_period_s_;
+    if ((now() - *last_step_time_).seconds() < wait_s) {
+      return false;
+    }
+
+    if (!last_step_perception_time_ || !last_perception_time_) {
+      return true;
+    }
+
+    return (*last_perception_time_ - *last_step_perception_time_).seconds() >
+           0.0;
   }
 
   AlignCommand computeAlignCommand(const SoccerPerception& perception) const {
@@ -876,6 +892,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     if (next == State::START_BALL_TRACK || next == State::ALIGN) {
       last_valid_align_command_.reset();
       last_valid_align_ball_x_.reset();
+      last_step_time_.reset();
+      last_step_perception_time_.reset();
     }
 
     if (next == State::NAVIGATE_TO_POINT) {
@@ -982,8 +1000,8 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_max_vx_ = 0.12;
   double align_max_vy_ = 0.10;
   double align_max_wz_ = 0.25;
-  double align_step_duration_s_ = 0.12;
-  double align_min_step_period_s_ = 0.10;
+  double align_step_duration_s_ = 0.45;
+  double align_min_step_period_s_ = 0.15;
 
   double min_ball_confidence_ = 0.45;
   double min_goal_confidence_ = 0.35;
@@ -1001,6 +1019,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   State state_ = State::IDLE;
   rclcpp::Time state_enter_time_;
   std::optional<rclcpp::Time> last_step_time_;
+  std::optional<rclcpp::Time> last_step_perception_time_;
   std::optional<AlignCommand> last_valid_align_command_;
   std::optional<double> last_valid_align_ball_x_;
   int stable_align_frames_ = 0;
