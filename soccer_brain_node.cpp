@@ -149,6 +149,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_lost_ball_kick_x_m", 0.45);
     declare_parameter<double>("align_lost_ball_kick_y_tolerance_m", 0.10);
     declare_parameter<double>("align_lost_ball_kick_yaw_tolerance_rad", 0.18);
+    declare_parameter<bool>("kick_on_align_timeout", true);
 
     declare_parameter<double>("align_kx", 0.45);
     declare_parameter<double>("align_ky", 0.55);
@@ -224,6 +225,7 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter("align_lost_ball_kick_y_tolerance_m").as_double();
     align_lost_ball_kick_yaw_tolerance_rad_ =
         get_parameter("align_lost_ball_kick_yaw_tolerance_rad").as_double();
+    kick_on_align_timeout_ = get_parameter("kick_on_align_timeout").as_bool();
 
     align_kx_ = get_parameter("align_kx").as_double();
     align_ky_ = get_parameter("align_ky").as_double();
@@ -451,8 +453,16 @@ class SoccerBrainNode final : public rclcpp::Node {
   void handleAlign() {
     if (elapsedInState() > align_timeout_s_) {
       stopObstacleStep();
-      restoreFsmAfterAlign();
-      transitionToError("align timeout");
+      if (kick_on_align_timeout_) {
+        if (!restoreFsmAfterAlign()) {
+          transitionToError("align timeout and failed to restore fsm");
+          return;
+        }
+        transitionTo(State::STOP_BALL_TRACK, "align timeout; kick fallback");
+      } else {
+        restoreFsmAfterAlign();
+        transitionToError("align timeout");
+      }
       return;
     }
 
@@ -460,7 +470,10 @@ class SoccerBrainNode final : public rclcpp::Node {
       stable_align_frames_ = 0;
       stopObstacleStep();
       if (shouldKickAfterAlignBallLoss()) {
-        restoreFsmAfterAlign();
+        if (!restoreFsmAfterAlign()) {
+          transitionToError("ball lost near feet but failed to restore fsm");
+          return;
+        }
         transitionTo(State::STOP_BALL_TRACK, "ball lost near feet; kick fallback");
       }
       return;
@@ -486,7 +499,10 @@ class SoccerBrainNode final : public rclcpp::Node {
           command.y_error, command.yaw_error, last_perception_->ball.point.x,
           last_perception_->ball.point.y, last_perception_->ball.point.z);
       if (stable_align_frames_ >= align_required_stable_frames_) {
-        restoreFsmAfterAlign();
+        if (!restoreFsmAfterAlign()) {
+          transitionToError("align stable but failed to restore fsm");
+          return;
+        }
         transitionTo(State::STOP_BALL_TRACK, "align stable");
       }
       return;
@@ -579,11 +595,11 @@ class SoccerBrainNode final : public rclcpp::Node {
     return true;
   }
 
-  void restoreFsmAfterAlign() {
+  bool restoreFsmAfterAlign() {
     if (!restore_fsm_after_align_ || !obstacle_mode_active_ || !loco_client_) {
       disableContinuousGait();
       obstacle_mode_active_ = false;
-      return;
+      return true;
     }
 
     disableContinuousGait();
@@ -594,12 +610,41 @@ class SoccerBrainNode final : public rclcpp::Node {
       RCLCPP_WARN(
           get_logger(), "SetFsmId(%d) restore after ALIGN failed: %d",
           restore_id, ret);
+      return false;
     } else {
       RCLCPP_INFO(
           get_logger(), "align control mode restore sent: SetFsmId(%d) success",
           restore_id);
     }
+
+    if (!confirmFsmId(restore_id)) {
+      RCLCPP_WARN(
+          get_logger(), "SetFsmId(%d) restore was sent but fsm confirmation failed",
+          restore_id);
+      return false;
+    }
+
     obstacle_mode_active_ = false;
+    return true;
+  }
+
+  bool confirmFsmId(int expected_fsm_id) {
+    if (!loco_client_) {
+      return false;
+    }
+
+    for (int attempt = 0; attempt < 5; ++attempt) {
+      int current_fsm = -1;
+      const int32_t ret = loco_client_->GetFsmId(current_fsm);
+      if (ret == 0 && current_fsm == expected_fsm_id) {
+        RCLCPP_INFO(
+            get_logger(), "align control mode confirmed: fsm_id=%d",
+            current_fsm);
+        return true;
+      }
+      rclcpp::sleep_for(50ms);
+    }
+    return false;
   }
 
   void disableContinuousGait() {
@@ -828,6 +873,10 @@ class SoccerBrainNode final : public rclcpp::Node {
       return false;
     }
 
+    RCLCPP_INFO(
+        get_logger(), "kick action goal sending: server=%s params=%s",
+        kick_action_server_.c_str(), goal.params.c_str());
+
     auto options = rclcpp_action::Client<ExecutionUnit>::SendGoalOptions();
     options.goal_response_callback =
         [this](const GoalHandleExecutionUnit::SharedPtr& handle) {
@@ -1000,6 +1049,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_lost_ball_kick_x_m_ = 0.45;
   double align_lost_ball_kick_y_tolerance_m_ = 0.10;
   double align_lost_ball_kick_yaw_tolerance_rad_ = 0.18;
+  bool kick_on_align_timeout_ = true;
 
   double align_kx_ = 0.45;
   double align_ky_ = 0.55;

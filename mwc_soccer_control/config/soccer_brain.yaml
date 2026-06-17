@@ -43,6 +43,7 @@ soccer_brain_node:
     align_lost_ball_kick_x_m: 0.45
     align_lost_ball_kick_y_tolerance_m: 0.10
     align_lost_ball_kick_yaw_tolerance_rad: 0.18
+    kick_on_align_timeout: true
 
     # ALIGN correction controller. Each SetVelocity command runs once, then the
     # node waits for the command duration, a settle period, and a fresh perception

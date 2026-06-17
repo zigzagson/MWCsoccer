@@ -110,6 +110,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_lost_ball_kick_x_m`：近脚丢球开踢的前向距离阈值。当前默认 `0.45m`，用于覆盖相机约 `0.40m` 以内看不到球的情况。
 - `align_lost_ball_kick_y_tolerance_m`：近脚丢球开踢时允许的最后横向误差。当前默认 `0.10m`。
 - `align_lost_ball_kick_yaw_tolerance_rad`：近脚丢球开踢时允许的最后朝向误差。当前默认 `0.18rad`。
+- `kick_on_align_timeout`：ALIGN 超时后是否走开踢 fallback。当前默认 `true`；触发前必须先成功恢复 FSM，默认恢复到 `802`，恢复失败则进入 `ERROR` 不踢。
 
 ### ALIGN 微调控制
 
