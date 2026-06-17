@@ -38,6 +38,20 @@ const char* boolText(bool value) {
   return value ? "true" : "false";
 }
 
+const char* resultCodeName(rclcpp_action::ResultCode code) {
+  switch (code) {
+    case rclcpp_action::ResultCode::SUCCEEDED:
+      return "SUCCEEDED";
+    case rclcpp_action::ResultCode::ABORTED:
+      return "ABORTED";
+    case rclcpp_action::ResultCode::CANCELED:
+      return "CANCELED";
+    case rclcpp_action::ResultCode::UNKNOWN:
+      return "UNKNOWN";
+  }
+  return "UNRECOGNIZED";
+}
+
 std::string jsonEscape(const std::string& value) {
   std::ostringstream out;
   for (const char c : value) {
@@ -881,11 +895,24 @@ class SoccerBrainNode final : public rclcpp::Node {
     options.goal_response_callback =
         [this](const GoalHandleExecutionUnit::SharedPtr& handle) {
           if (!handle) {
+            RCLCPP_ERROR(get_logger(), "kick action goal response: rejected");
             transitionToError("kick goal rejected");
+            return;
           }
+          RCLCPP_INFO(get_logger(), "kick action goal response: accepted");
         };
     options.result_callback =
         [this](const GoalHandleExecutionUnit::WrappedResult& result) {
+          const int action_result =
+              result.result ? static_cast<int>(result.result->result) : -1;
+          const auto action_error =
+              result.result ? result.result->error_message : "empty result";
+          RCLCPP_INFO(
+              get_logger(),
+              "kick action result received: code=%s action_result=%d "
+              "error_message=%s",
+              resultCodeName(result.code), action_result,
+              action_error.c_str());
           if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
             transitionToError("kick action failed");
             return;
