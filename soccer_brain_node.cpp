@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -118,7 +119,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     publishBehavior("IDLE", "boot");
 
     if (auto_start_) {
-      startPenaltyAttack();
+      startConfiguredMode();
     }
   }
 
@@ -131,6 +132,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     STOP_BALL_TRACK,
     READY_KICK,
     KICK,
+    TRACK_BALL,
+    GOALKEEPER_MOVE,
     FINISH,
     ERROR,
   };
@@ -143,6 +146,24 @@ class SoccerBrainNode final : public rclcpp::Node {
     double y_error = 0.0;
     double yaw_error = 0.0;
     bool within_tolerance = false;
+  };
+
+  struct GoalkeeperSample {
+    rclcpp::Time received_time;
+    double x = 0.0;
+    double y = 0.0;
+  };
+
+  struct GoalkeeperTrend {
+    int direction = 0;
+    int consistent_steps = 0;
+    int total_steps = 0;
+    double duration_s = 0.0;
+    double delta_x = 0.0;
+    double delta_y = 0.0;
+    double velocity_x = 0.0;
+    double velocity_y = 0.0;
+    double consistency_ratio = 0.0;
   };
 
   void declareParameters() {
@@ -191,6 +212,21 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_step_duration_s", 0.45);
     declare_parameter<double>("align_min_step_period_s", 0.15);
     declare_parameter<bool>("align_require_standing_for_sample", true);
+
+    declare_parameter<double>("goalkeeper_min_ball_confidence", 0.30);
+    declare_parameter<int>("goalkeeper_trend_frames", 4);
+    declare_parameter<double>("goalkeeper_trend_window_s", 0.35);
+    declare_parameter<double>("goalkeeper_min_frame_delta_x", 0.01);
+    declare_parameter<double>("goalkeeper_min_total_delta_x", 0.12);
+    declare_parameter<double>("goalkeeper_min_horizontal_speed", 0.80);
+    declare_parameter<double>("goalkeeper_direction_consistency", 0.75);
+    declare_parameter<double>("goalkeeper_min_downward_speed", 0.0);
+    declare_parameter<bool>("goalkeeper_enable_motion", true);
+    declare_parameter<double>("goalkeeper_lateral_speed", 1.00);
+    declare_parameter<double>("goalkeeper_lateral_sign", 1.0);
+    declare_parameter<double>("goalkeeper_move_duration_s", 0.70);
+    declare_parameter<double>("goalkeeper_rearm_delay_s", 0.40);
+    declare_parameter<double>("goalkeeper_perception_timeout_s", 0.30);
 
     declare_parameter<double>("min_ball_confidence", 0.45);
     declare_parameter<double>("min_goal_confidence", 0.35);
@@ -273,6 +309,35 @@ class SoccerBrainNode final : public rclcpp::Node {
     align_require_standing_for_sample_ =
         get_parameter("align_require_standing_for_sample").as_bool();
 
+    goalkeeper_min_ball_confidence_ =
+        get_parameter("goalkeeper_min_ball_confidence").as_double();
+    goalkeeper_trend_frames_ =
+        static_cast<int>(get_parameter("goalkeeper_trend_frames").as_int());
+    goalkeeper_trend_window_s_ =
+        get_parameter("goalkeeper_trend_window_s").as_double();
+    goalkeeper_min_frame_delta_x_ =
+        get_parameter("goalkeeper_min_frame_delta_x").as_double();
+    goalkeeper_min_total_delta_x_ =
+        get_parameter("goalkeeper_min_total_delta_x").as_double();
+    goalkeeper_min_horizontal_speed_ =
+        get_parameter("goalkeeper_min_horizontal_speed").as_double();
+    goalkeeper_direction_consistency_ =
+        get_parameter("goalkeeper_direction_consistency").as_double();
+    goalkeeper_min_downward_speed_ =
+        get_parameter("goalkeeper_min_downward_speed").as_double();
+    goalkeeper_enable_motion_ =
+        get_parameter("goalkeeper_enable_motion").as_bool();
+    goalkeeper_lateral_speed_ =
+        get_parameter("goalkeeper_lateral_speed").as_double();
+    goalkeeper_lateral_sign_ =
+        get_parameter("goalkeeper_lateral_sign").as_double();
+    goalkeeper_move_duration_s_ =
+        get_parameter("goalkeeper_move_duration_s").as_double();
+    goalkeeper_rearm_delay_s_ =
+        get_parameter("goalkeeper_rearm_delay_s").as_double();
+    goalkeeper_perception_timeout_s_ =
+        get_parameter("goalkeeper_perception_timeout_s").as_double();
+
     min_ball_confidence_ = get_parameter("min_ball_confidence").as_double();
     min_goal_confidence_ = get_parameter("min_goal_confidence").as_double();
     kick_action_name_ = get_parameter("kick_action_name").as_string();
@@ -335,6 +400,27 @@ class SoccerBrainNode final : public rclcpp::Node {
   void onPerception(const SoccerPerception::SharedPtr msg) {
     last_perception_ = msg;
     last_perception_time_ = now();
+    if (mode_ == "GOALKEEPER" && msg->image_has_ball &&
+        msg->transform_valid &&
+        msg->ball_confidence >= goalkeeper_min_ball_confidence_) {
+      goalkeeper_samples_.push_back(
+          {*last_perception_time_, msg->ball.point.x, msg->ball.point.y});
+      pruneGoalkeeperSamples();
+      RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 500,
+          "goalkeeper perception accepted: image_x=%.3f image_y=%.3f "
+          "confidence=%.3f samples=%zu/%d",
+          msg->ball.point.x, msg->ball.point.y, msg->ball_confidence,
+          goalkeeper_samples_.size(), std::max(2, goalkeeper_trend_frames_));
+    } else if (mode_ == "GOALKEEPER") {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "goalkeeper perception unavailable: image_has_ball=%s "
+          "transform_valid=%s confidence=%.3f required=%.3f detail=%s",
+          boolText(msg->image_has_ball), boolText(msg->transform_valid),
+          msg->ball_confidence,
+          goalkeeper_min_ball_confidence_, msg->detail.c_str());
+    }
   }
 
   void onNavStatus(const NavStatus::SharedPtr msg) {
@@ -380,15 +466,22 @@ class SoccerBrainNode final : public rclcpp::Node {
     last_nav_status_time_ = now();
   }
 
-  void startPenaltyAttack() {
-    if (start_mode_ != "PENALTY_ATTACK") {
-      transitionToError("unsupported start_mode: " + start_mode_);
+  void startConfiguredMode() {
+    if (start_mode_ == "PENALTY_ATTACK") {
+      startPenaltyAttack();
       return;
     }
+    if (start_mode_ == "GOALKEEPER") {
+      startGoalkeeper();
+      return;
+    }
+    transitionToError("unsupported start_mode: " + start_mode_);
+  }
 
+  void publishGameMode(const std::string& mode) {
     GameModeCommand cmd;
     cmd.header.stamp = now();
-    cmd.mode = "PENALTY_ATTACK";
+    cmd.mode = mode;
     cmd.goal_target = static_cast<float>(goal_target_);
     cmd.nav_ball_distance_m = static_cast<float>(nav_ball_distance_m_);
     cmd.reset_state = true;
@@ -399,8 +492,22 @@ class SoccerBrainNode final : public rclcpp::Node {
         "reset_state=%s",
         cmd.mode.c_str(), cmd.goal_target, cmd.nav_ball_distance_m,
         boolText(cmd.reset_state));
+  }
 
+  void startPenaltyAttack() {
+    mode_ = "PENALTY_ATTACK";
+    publishGameMode(mode_);
     transitionTo(State::NAVIGATE_TO_POINT, "sent PENALTY_ATTACK");
+  }
+
+  void startGoalkeeper() {
+    mode_ = "GOALKEEPER";
+    goalkeeper_samples_.clear();
+    last_goalkeeper_evaluated_time_.reset();
+    goalkeeper_move_end_time_.reset();
+    goalkeeper_rearm_time_ = now();
+    publishGameMode(mode_);
+    transitionTo(State::TRACK_BALL, "sent GOALKEEPER");
   }
 
   void tick() {
@@ -424,6 +531,12 @@ class SoccerBrainNode final : public rclcpp::Node {
         return;
       case State::KICK:
         handleKick();
+        return;
+      case State::TRACK_BALL:
+        handleTrackBall();
+        return;
+      case State::GOALKEEPER_MOVE:
+        handleGoalkeeperMove();
         return;
       case State::FINISH:
       case State::ERROR:
@@ -628,6 +741,194 @@ class SoccerBrainNode final : public rclcpp::Node {
       transitionToError("failed to send kick action");
       return;
     }
+  }
+
+  void handleTrackBall() {
+    if (now() < goalkeeper_rearm_time_) {
+      return;
+    }
+    pruneGoalkeeperSamples();
+    if (goalkeeper_samples_.size() <
+        static_cast<std::size_t>(std::max(2, goalkeeper_trend_frames_))) {
+      return;
+    }
+
+    const auto& newest = goalkeeper_samples_.back();
+    if ((now() - newest.received_time).seconds() >
+        goalkeeper_perception_timeout_s_) {
+      return;
+    }
+    if (last_goalkeeper_evaluated_time_ &&
+        (newest.received_time - *last_goalkeeper_evaluated_time_).seconds() <=
+            0.0) {
+      return;
+    }
+    last_goalkeeper_evaluated_time_ = newest.received_time;
+
+    const auto trend = computeGoalkeeperTrend();
+    if (!trend) {
+      return;
+    }
+
+    const bool fast_enough =
+        std::abs(trend->delta_x) >= goalkeeper_min_total_delta_x_ &&
+        std::abs(trend->velocity_x) >=
+            goalkeeper_min_horizontal_speed_;
+    const bool consistent =
+        trend->consistency_ratio >= goalkeeper_direction_consistency_;
+    const bool moving_down =
+        goalkeeper_min_downward_speed_ <= 0.0 ||
+        trend->velocity_y <= -goalkeeper_min_downward_speed_;
+
+    const char* direction_text =
+        std::abs(trend->delta_x) < goalkeeper_min_frame_delta_x_
+            ? "stationary"
+            : (trend->direction < 0 ? "left" : "right");
+    if (fast_enough) {
+      RCLCPP_INFO(
+          get_logger(),
+          "goalkeeper trend: frames=%zu dt=%.3f dx=%.3f dy=%.3f "
+          "vx_img=%.3f vy_img=%.3f direction=%s consistency=%d/%d=%.2f "
+          "fast=%s moving_down=%s",
+          goalkeeper_samples_.size(), trend->duration_s, trend->delta_x,
+          trend->delta_y, trend->velocity_x, trend->velocity_y,
+          direction_text, trend->consistent_steps, trend->total_steps,
+          trend->consistency_ratio, boolText(fast_enough),
+          boolText(moving_down));
+    } else {
+      RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 500,
+          "goalkeeper trend: frames=%zu dt=%.3f dx=%.3f dy=%.3f "
+          "vx_img=%.3f vy_img=%.3f direction=%s consistency=%d/%d=%.2f "
+          "fast=%s moving_down=%s",
+          goalkeeper_samples_.size(), trend->duration_s, trend->delta_x,
+          trend->delta_y, trend->velocity_x, trend->velocity_y,
+          direction_text, trend->consistent_steps, trend->total_steps,
+          trend->consistency_ratio, boolText(fast_enough),
+          boolText(moving_down));
+    }
+
+    if (!fast_enough || !consistent || !moving_down) {
+      return;
+    }
+
+    const double lateral_speed =
+        std::copysign(
+            std::abs(goalkeeper_lateral_speed_),
+            goalkeeper_lateral_sign_ * static_cast<double>(trend->direction));
+    if (goalkeeper_enable_motion_) {
+      const int32_t ret = loco_client_->SetVelocity(
+          0.0f, static_cast<float>(lateral_speed), 0.0f,
+          static_cast<float>(goalkeeper_move_duration_s_));
+      if (ret != 0) {
+        transitionToError(
+            "goalkeeper lateral SetVelocity failed: " + std::to_string(ret));
+        return;
+      }
+    }
+
+    goalkeeper_move_end_time_ =
+        now() + rclcpp::Duration::from_seconds(goalkeeper_move_duration_s_);
+    RCLCPP_WARN(
+        get_logger(),
+        "goalkeeper lateral move %s: vx=0.000 vy=%.3f wz=0.000 "
+        "duration=%.3f image_direction=%s dx=%.3f vx_img=%.3f",
+        goalkeeper_enable_motion_ ? "sent" : "dry-run",
+        lateral_speed, goalkeeper_move_duration_s_,
+        trend->direction < 0 ? "left" : "right", trend->delta_x,
+        trend->velocity_x);
+    transitionTo(
+        State::GOALKEEPER_MOVE,
+        std::string("shot trend ") +
+            (trend->direction < 0 ? "left" : "right"));
+  }
+
+  void handleGoalkeeperMove() {
+    if (!goalkeeper_move_end_time_ || now() < *goalkeeper_move_end_time_) {
+      return;
+    }
+
+    if (goalkeeper_enable_motion_) {
+      const int32_t ret =
+          loco_client_->SetVelocity(0.0f, 0.0f, 0.0f, 0.1f);
+      if (ret != 0) {
+        RCLCPP_WARN(
+            get_logger(), "goalkeeper stop SetVelocity failed: %d", ret);
+      } else {
+        RCLCPP_INFO(
+            get_logger(),
+            "goalkeeper stop sent: vx=0.000 vy=0.000 wz=0.000 duration=0.100");
+      }
+    } else {
+      RCLCPP_INFO(
+          get_logger(),
+          "goalkeeper stop dry-run: vx=0.000 vy=0.000 wz=0.000 "
+          "duration=0.100");
+    }
+
+    goalkeeper_samples_.clear();
+    last_goalkeeper_evaluated_time_.reset();
+    goalkeeper_move_end_time_.reset();
+    goalkeeper_rearm_time_ =
+        now() + rclcpp::Duration::from_seconds(goalkeeper_rearm_delay_s_);
+    transitionTo(State::TRACK_BALL, "goalkeeper lateral move complete");
+  }
+
+  void pruneGoalkeeperSamples() {
+    const auto cutoff =
+        now() - rclcpp::Duration::from_seconds(
+                    std::max(
+                        goalkeeper_trend_window_s_,
+                        goalkeeper_perception_timeout_s_));
+    while (!goalkeeper_samples_.empty() &&
+           goalkeeper_samples_.front().received_time < cutoff) {
+      goalkeeper_samples_.pop_front();
+    }
+    const std::size_t max_samples =
+        static_cast<std::size_t>(std::max(2, goalkeeper_trend_frames_));
+    while (goalkeeper_samples_.size() > max_samples) {
+      goalkeeper_samples_.pop_front();
+    }
+  }
+
+  std::optional<GoalkeeperTrend> computeGoalkeeperTrend() const {
+    const std::size_t required =
+        static_cast<std::size_t>(std::max(2, goalkeeper_trend_frames_));
+    if (goalkeeper_samples_.size() < required) {
+      return std::nullopt;
+    }
+
+    GoalkeeperTrend trend;
+    const auto& first = goalkeeper_samples_.front();
+    const auto& last = goalkeeper_samples_.back();
+    trend.duration_s = (last.received_time - first.received_time).seconds();
+    if (trend.duration_s <= 0.0 ||
+        trend.duration_s > goalkeeper_trend_window_s_) {
+      return std::nullopt;
+    }
+
+    trend.delta_x = last.x - first.x;
+    trend.delta_y = last.y - first.y;
+    trend.velocity_x = trend.delta_x / trend.duration_s;
+    trend.velocity_y = trend.delta_y / trend.duration_s;
+    trend.direction = trend.delta_x < 0.0 ? -1 : 1;
+
+    for (std::size_t i = 1; i < goalkeeper_samples_.size(); ++i) {
+      const double frame_delta_x =
+          goalkeeper_samples_[i].x - goalkeeper_samples_[i - 1].x;
+      ++trend.total_steps;
+      if (std::abs(frame_delta_x) >= goalkeeper_min_frame_delta_x_ &&
+          (frame_delta_x < 0.0 ? -1 : 1) == trend.direction) {
+        ++trend.consistent_steps;
+      }
+    }
+    if (trend.total_steps == 0) {
+      return std::nullopt;
+    }
+    trend.consistency_ratio =
+        static_cast<double>(trend.consistent_steps) /
+        static_cast<double>(trend.total_steps);
+    return trend;
   }
 
   bool enterObstacleSteppingMode() {
@@ -1058,6 +1359,10 @@ class SoccerBrainNode final : public rclcpp::Node {
         return 0.85f;
       case State::KICK:
         return 0.95f;
+      case State::TRACK_BALL:
+        return 0.35f;
+      case State::GOALKEEPER_MOVE:
+        return 0.65f;
       case State::FINISH:
         return 1.0f;
       case State::ERROR:
@@ -1185,6 +1490,9 @@ class SoccerBrainNode final : public rclcpp::Node {
       mode_ = "PENALTY_ATTACK";
       kick_goal_sent_ = false;
     }
+    if (next == State::TRACK_BALL || next == State::GOALKEEPER_MOVE) {
+      mode_ = "GOALKEEPER";
+    }
     if (next == State::START_BALL_TRACK) {
       publishVisionTrackCommand("START_BALL_TRACK");
     } else if (next == State::STOP_BALL_TRACK) {
@@ -1202,11 +1510,21 @@ class SoccerBrainNode final : public rclcpp::Node {
   void transitionToError(const std::string& detail) {
     const auto previous = state_;
     const double previous_elapsed = elapsedInState();
+    if (previous == State::GOALKEEPER_MOVE && loco_client_) {
+      const int32_t ret =
+          loco_client_->SetVelocity(0.0f, 0.0f, 0.0f, 0.1f);
+      if (ret != 0) {
+        RCLCPP_WARN(
+            get_logger(), "goalkeeper emergency stop failed: %d", ret);
+      }
+    }
     stopObstacleStep();
     restoreFsmAfterAlign();
     state_ = State::ERROR;
     state_enter_time_ = now();
-    publishVisionTrackCommand("STOP_BALL_TRACK");
+    if (mode_ == "PENALTY_ATTACK") {
+      publishVisionTrackCommand("STOP_BALL_TRACK");
+    }
     publishBehavior("ERROR", detail);
     RCLCPP_ERROR(
         get_logger(),
@@ -1231,6 +1549,10 @@ class SoccerBrainNode final : public rclcpp::Node {
         return "READY_KICK";
       case State::KICK:
         return "KICK";
+      case State::TRACK_BALL:
+        return "TRACK_BALL";
+      case State::GOALKEEPER_MOVE:
+        return "GOALKEEPER_MOVE";
       case State::FINISH:
         return "FINISH";
       case State::ERROR:
@@ -1291,6 +1613,21 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_min_step_period_s_ = 0.15;
   bool align_require_standing_for_sample_ = true;
 
+  double goalkeeper_min_ball_confidence_ = 0.30;
+  int goalkeeper_trend_frames_ = 4;
+  double goalkeeper_trend_window_s_ = 0.35;
+  double goalkeeper_min_frame_delta_x_ = 0.01;
+  double goalkeeper_min_total_delta_x_ = 0.12;
+  double goalkeeper_min_horizontal_speed_ = 0.80;
+  double goalkeeper_direction_consistency_ = 0.75;
+  double goalkeeper_min_downward_speed_ = 0.0;
+  bool goalkeeper_enable_motion_ = true;
+  double goalkeeper_lateral_speed_ = 1.00;
+  double goalkeeper_lateral_sign_ = 1.0;
+  double goalkeeper_move_duration_s_ = 0.70;
+  double goalkeeper_rearm_delay_s_ = 0.40;
+  double goalkeeper_perception_timeout_s_ = 0.30;
+
   double min_ball_confidence_ = 0.45;
   double min_goal_confidence_ = 0.35;
   std::string kick_action_name_ = "PENALTY_KICK";
@@ -1321,6 +1658,10 @@ class SoccerBrainNode final : public rclcpp::Node {
   bool align_stop_sent_ = false;
   bool kick_goal_sent_ = false;
   std::optional<int> saved_fsm_id_;
+  std::deque<GoalkeeperSample> goalkeeper_samples_;
+  std::optional<rclcpp::Time> last_goalkeeper_evaluated_time_;
+  std::optional<rclcpp::Time> goalkeeper_move_end_time_;
+  rclcpp::Time goalkeeper_rearm_time_{0, 0, RCL_ROS_TIME};
 
   std::unique_ptr<unitree::robot::g1::LocoClient> loco_client_;
 

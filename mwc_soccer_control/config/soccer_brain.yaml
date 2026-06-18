@@ -1,6 +1,6 @@
 soccer_brain_node:
   ros__parameters:
-    # Startup mode. The current controller implements PENALTY_ATTACK.
+    # Startup mode: PENALTY_ATTACK or GOALKEEPER.
     start_mode: PENALTY_ATTACK
     auto_start: true
 
@@ -58,6 +58,28 @@ soccer_brain_node:
     align_step_duration_s: 0.45
     align_min_step_period_s: 0.15
     align_require_standing_for_sample: true
+
+    # GOALKEEPER reuses perception.ball as image-centered coordinates:
+    # x < 0 left, x > 0 right, y < 0 down, y > 0 up, z = 0.
+    # image_has_ball and transform_valid must both be true. Goal fields are
+    # ignored because the wide-angle goalkeeper view normally has no goal.
+    goalkeeper_min_ball_confidence: 0.30
+    goalkeeper_trend_frames: 4
+    goalkeeper_trend_window_s: 0.35
+    goalkeeper_min_frame_delta_x: 0.01
+    goalkeeper_min_total_delta_x: 0.12
+    goalkeeper_min_horizontal_speed: 0.80
+    goalkeeper_direction_consistency: 0.75
+    # 0 disables the downward-motion requirement. Set a positive value to
+    # require image y velocity <= -value before moving.
+    goalkeeper_min_downward_speed: 0.0
+    goalkeeper_enable_motion: true
+    goalkeeper_lateral_speed: 1.00
+    # Change to -1.0 if image-right requires negative robot vy on the real G1.
+    goalkeeper_lateral_sign: 1.0
+    goalkeeper_move_duration_s: 0.70
+    goalkeeper_rearm_delay_s: 0.40
+    goalkeeper_perception_timeout_s: 0.30
 
     # Perception validity.
     min_ball_confidence: 0.30
