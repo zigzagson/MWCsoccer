@@ -105,7 +105,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_x_tolerance_m`：前后方向容差。当前默认 `0.08m`，调大更容易进入射门，调小对位更严格。
 - `align_y_tolerance_m`：左右方向容差。当前默认 `0.06m`，调大更快通过，调小能提高起脚横向一致性。
 - `align_yaw_tolerance_rad`：朝向容差。当前默认 `0.12rad`，调小会要求机器人更正对球/门。
-- `align_required_stable_frames`：连续多少帧都满足容差才认为 ALIGN 成功。当前默认 `3` 帧，调大更稳但更慢，调小更快但容易误判。
+- `align_required_stable_frames`：连续多少个不同的静止感知帧都满足容差才认为 ALIGN 成功。当前默认 `3` 帧；同一帧不会被控制定时器重复累计。
 - `kick_on_align_ball_lost_near_feet`：ALIGN 中如果最后一次有效球坐标已经接近脚前盲区，随后丢球时是否直接开踢。当前默认 `true`。
 - `align_lost_ball_kick_x_m`：近脚丢球开踢的前向距离阈值。当前默认 `0.45m`，用于覆盖相机约 `0.40m` 以内看不到球的情况。
 - `align_lost_ball_kick_y_tolerance_m`：近脚丢球开踢时允许的最后横向误差。当前默认 `0.10m`。
@@ -122,7 +122,8 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_max_wz`：ALIGN 角速度上限。当前默认 `0.50`，限制原地转向速度。
 - `align_min_speed`：ALIGN 各方向的最小非零速度。当前默认 `0.20`；某方向误差超过对应阈值时，该方向速度绝对值不会低于此值，进入对应阈值后该方向速度为 `0`。
 - `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。当前默认 `0.45s`，调大单次修正更明显。
-- `align_min_step_period_s`：每次速度指令结束后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到新的 `/soccer/perception`，才会计算并发送下一次修正。
+- `align_min_step_period_s`：`GetFsmMode` 确认站立后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到站立确认之后的新 `/soccer/perception`，才会计算并发送下一次修正。
+- `align_require_standing_for_sample`：是否要求 `GetFsmMode()==0` 后才采纳 ALIGN 坐标。默认 `true`；移动期间、停稳前和重复的感知帧都不参与误差计算及稳定计数。
 
 ### 感知有效性
 

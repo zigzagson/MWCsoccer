@@ -46,8 +46,8 @@ soccer_brain_node:
     kick_on_align_timeout: true
 
     # ALIGN correction controller. Each SetVelocity command runs once, then the
-    # node waits for the command duration, a settle period, and a fresh perception
-    # sample before sending the next correction.
+    # node waits for the command duration, confirms GetFsmMode=0, waits for the
+    # settle period, and then uses a fresh perception sample.
     align_kx: 0.45
     align_ky: 0.55
     align_kw: 0.90
@@ -57,6 +57,7 @@ soccer_brain_node:
     align_min_speed: 0.20
     align_step_duration_s: 0.45
     align_min_step_period_s: 0.15
+    align_require_standing_for_sample: true
 
     # Perception validity.
     min_ball_confidence: 0.30

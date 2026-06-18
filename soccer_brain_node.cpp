@@ -190,6 +190,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_min_speed", 0.20);
     declare_parameter<double>("align_step_duration_s", 0.45);
     declare_parameter<double>("align_min_step_period_s", 0.15);
+    declare_parameter<bool>("align_require_standing_for_sample", true);
 
     declare_parameter<double>("min_ball_confidence", 0.45);
     declare_parameter<double>("min_goal_confidence", 0.35);
@@ -269,6 +270,8 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter("align_step_duration_s").as_double();
     align_min_step_period_s_ =
         get_parameter("align_min_step_period_s").as_double();
+    align_require_standing_for_sample_ =
+        get_parameter("align_require_standing_for_sample").as_bool();
 
     min_ball_confidence_ = get_parameter("min_ball_confidence").as_double();
     min_goal_confidence_ = get_parameter("min_goal_confidence").as_double();
@@ -517,9 +520,14 @@ class SoccerBrainNode final : public rclcpp::Node {
       return;
     }
 
+    if (!readyForStationaryAlignSample()) {
+      return;
+    }
+
+    last_processed_align_perception_time_ = last_perception_time_;
+
     if (!validPerception()) {
       stable_align_frames_ = 0;
-      stopObstacleStep();
       if (!last_logged_align_lost_perception_time_ ||
           !last_perception_time_ ||
           (*last_perception_time_ -
@@ -548,7 +556,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     last_valid_align_command_ = command;
     last_valid_align_ball_x_ = last_perception_->ball.point.x;
     RCLCPP_INFO(
-        get_logger(), "align realtime error: %s",
+        get_logger(), "align stationary error: %s",
         alignCommandSummary(command, *last_perception_).c_str());
     publishBehavior(
         "ALIGN",
@@ -581,10 +589,6 @@ class SoccerBrainNode final : public rclcpp::Node {
     }
 
     stable_align_frames_ = 0;
-    if (!readyForNextAlignCorrection()) {
-      return;
-    }
-
     if (sendObstacleStep(command.vx, command.vy, command.wz)) {
       RCLCPP_INFO(
           get_logger(),
@@ -772,26 +776,109 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     last_step_time_ = now();
     last_step_perception_time_ = last_perception_time_;
+    align_stand_confirmed_time_.reset();
     align_stop_sent_ = false;
     return true;
   }
 
-  bool readyForNextAlignCorrection() const {
-    if (!last_step_time_) {
-      return true;
-    }
-
-    const double wait_s = align_step_duration_s_ + align_min_step_period_s_;
-    if ((now() - *last_step_time_).seconds() < wait_s) {
+  bool readyForStationaryAlignSample() {
+    if (!last_perception_time_) {
       return false;
     }
 
-    if (!last_step_perception_time_ || !last_perception_time_) {
-      return true;
+    if (last_processed_align_perception_time_ &&
+        (*last_perception_time_ -
+         *last_processed_align_perception_time_).seconds() <= 0.0) {
+      return false;
     }
 
-    return (*last_perception_time_ - *last_step_perception_time_).seconds() >
-           0.0;
+    if (!align_require_standing_for_sample_) {
+      if (!last_step_time_) {
+        return true;
+      }
+      const double wait_s =
+          align_step_duration_s_ + align_min_step_period_s_;
+      return (now() - *last_step_time_).seconds() >= wait_s &&
+             (!last_step_perception_time_ ||
+              (*last_perception_time_ -
+               *last_step_perception_time_).seconds() > 0.0);
+    }
+
+    if (last_step_time_ &&
+        (now() - *last_step_time_).seconds() < align_step_duration_s_) {
+      return false;
+    }
+
+    stopObstacleStep();
+
+    if (!align_stand_confirmed_time_) {
+      if (!loco_client_) {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 1000,
+            "align stationary sample blocked: LocoClient unavailable");
+        return false;
+      }
+
+      int fsm_mode = -1;
+      const int32_t ret = loco_client_->GetFsmMode(fsm_mode);
+      if (ret != 0) {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 1000,
+            "align stationary sample blocked: GetFsmMode failed ret=%d", ret);
+        return false;
+      }
+      if (fsm_mode != 0) {
+        RCLCPP_INFO_THROTTLE(
+            get_logger(), *get_clock(), 1000,
+            "align waiting for stand: fsm_mode=%d (0=standing, 1=moving)",
+            fsm_mode);
+        return false;
+      }
+
+      align_stand_confirmed_time_ = now();
+      align_stand_perception_time_ = last_perception_time_;
+      RCLCPP_INFO(
+          get_logger(),
+          "align stand confirmed: fsm_mode=0; wait %.3fs then use a new "
+          "perception frame",
+          align_min_step_period_s_);
+      return false;
+    }
+
+    if ((now() - *align_stand_confirmed_time_).seconds() <
+        align_min_step_period_s_) {
+      return false;
+    }
+
+    if (align_stand_perception_time_ &&
+        (*last_perception_time_ -
+         *align_stand_perception_time_).seconds() <= 0.0) {
+      RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "align waiting for fresh perception after stand confirmation");
+      return false;
+    }
+
+    if ((*last_perception_time_ -
+         *align_stand_confirmed_time_).seconds() <= 0.0) {
+      RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "align ignoring perception captured before stand confirmation");
+      return false;
+    }
+
+    int fsm_mode = -1;
+    const int32_t ret = loco_client_->GetFsmMode(fsm_mode);
+    if (ret != 0 || fsm_mode != 0) {
+      align_stand_confirmed_time_.reset();
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "align stationary sample rejected: GetFsmMode ret=%d mode=%d",
+          ret, fsm_mode);
+      return false;
+    }
+
+    return true;
   }
 
   AlignCommand computeAlignCommand(const SoccerPerception& perception) const {
@@ -1083,8 +1170,15 @@ class SoccerBrainNode final : public rclcpp::Node {
       last_valid_align_ball_x_.reset();
       last_step_time_.reset();
       last_step_perception_time_.reset();
+      last_processed_align_perception_time_.reset();
+      align_stand_confirmed_time_.reset();
+      align_stand_perception_time_.reset();
       last_logged_align_lost_perception_time_.reset();
       align_stop_sent_ = false;
+    }
+
+    if (next == State::ALIGN) {
+      align_stand_perception_time_ = last_perception_time_;
     }
 
     if (next == State::NAVIGATE_TO_POINT) {
@@ -1195,6 +1289,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_min_speed_ = 0.20;
   double align_step_duration_s_ = 0.45;
   double align_min_step_period_s_ = 0.15;
+  bool align_require_standing_for_sample_ = true;
 
   double min_ball_confidence_ = 0.45;
   double min_goal_confidence_ = 0.35;
@@ -1214,6 +1309,9 @@ class SoccerBrainNode final : public rclcpp::Node {
   rclcpp::Time state_enter_time_;
   std::optional<rclcpp::Time> last_step_time_;
   std::optional<rclcpp::Time> last_step_perception_time_;
+  std::optional<rclcpp::Time> last_processed_align_perception_time_;
+  std::optional<rclcpp::Time> align_stand_confirmed_time_;
+  std::optional<rclcpp::Time> align_stand_perception_time_;
   std::optional<rclcpp::Time> last_logged_align_lost_perception_time_;
   std::optional<AlignCommand> last_valid_align_command_;
   std::optional<double> last_valid_align_ball_x_;

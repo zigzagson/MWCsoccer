@@ -38,6 +38,7 @@ def generate_launch_description():
             params_file,
             {
                 "enable_kick_action": False,
+                "align_require_standing_for_sample": False,
                 "kick_model_path": kick_model_path,
                 "kick_trajectory_path": kick_trajectory_path,
             },
