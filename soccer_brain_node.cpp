@@ -26,8 +26,24 @@ namespace mwc_soccer {
 
 namespace {
 
-double clampAbs(double value, double limit) {
-  return std::clamp(value, -std::abs(limit), std::abs(limit));
+double correctionVelocity(
+    double error,
+    double tolerance,
+    double gain,
+    double min_speed,
+    double max_speed) {
+  if (std::abs(error) <= std::abs(tolerance)) {
+    return 0.0;
+  }
+
+  const double max_magnitude = std::abs(max_speed);
+  const double min_magnitude =
+      std::min(std::abs(min_speed), max_magnitude);
+  const double raw_velocity = gain * error;
+  const double magnitude = std::clamp(
+      std::abs(raw_velocity), min_magnitude, max_magnitude);
+  return std::copysign(
+      magnitude, raw_velocity != 0.0 ? raw_velocity : error);
 }
 
 std::string nowDetail(double timestamp_seconds, const std::string& detail) {
@@ -171,6 +187,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_max_vx", 0.50);
     declare_parameter<double>("align_max_vy", 0.50);
     declare_parameter<double>("align_max_wz", 0.50);
+    declare_parameter<double>("align_min_speed", 0.20);
     declare_parameter<double>("align_step_duration_s", 0.45);
     declare_parameter<double>("align_min_step_period_s", 0.15);
 
@@ -247,6 +264,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     align_max_vx_ = get_parameter("align_max_vx").as_double();
     align_max_vy_ = get_parameter("align_max_vy").as_double();
     align_max_wz_ = get_parameter("align_max_wz").as_double();
+    align_min_speed_ = get_parameter("align_min_speed").as_double();
     align_step_duration_s_ =
         get_parameter("align_step_duration_s").as_double();
     align_min_step_period_s_ =
@@ -789,9 +807,15 @@ class SoccerBrainNode final : public rclcpp::Node {
         std::abs(command.y_error) <= align_y_tolerance_m_ &&
         std::abs(command.yaw_error) <= align_yaw_tolerance_rad_;
 
-    command.vx = clampAbs(align_kx_ * command.x_error, align_max_vx_);
-    command.vy = clampAbs(align_ky_ * command.y_error, align_max_vy_);
-    command.wz = clampAbs(align_kw_ * command.yaw_error, align_max_wz_);
+    command.vx = correctionVelocity(
+        command.x_error, align_x_tolerance_m_, align_kx_,
+        align_min_speed_, align_max_vx_);
+    command.vy = correctionVelocity(
+        command.y_error, align_y_tolerance_m_, align_ky_,
+        align_min_speed_, align_max_vy_);
+    command.wz = correctionVelocity(
+        command.yaw_error, align_yaw_tolerance_rad_, align_kw_,
+        align_min_speed_, align_max_wz_);
     return command;
   }
 
@@ -1168,6 +1192,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_max_vx_ = 0.50;
   double align_max_vy_ = 0.50;
   double align_max_wz_ = 0.50;
+  double align_min_speed_ = 0.20;
   double align_step_duration_s_ = 0.45;
   double align_min_step_period_s_ = 0.15;
 

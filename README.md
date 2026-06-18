@@ -120,6 +120,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_max_vx`：ALIGN 前后速度上限。当前默认 `0.50`，限制每次向前/后踏步速度。
 - `align_max_vy`：ALIGN 横向速度上限。当前默认 `0.50`，限制左右踏步速度。
 - `align_max_wz`：ALIGN 角速度上限。当前默认 `0.50`，限制原地转向速度。
+- `align_min_speed`：ALIGN 各方向的最小非零速度。当前默认 `0.20`；某方向误差超过对应阈值时，该方向速度绝对值不会低于此值，进入对应阈值后该方向速度为 `0`。
 - `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。当前默认 `0.45s`，调大单次修正更明显。
 - `align_min_step_period_s`：每次速度指令结束后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到新的 `/soccer/perception`，才会计算并发送下一次修正。
 
