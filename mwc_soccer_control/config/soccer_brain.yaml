@@ -8,7 +8,7 @@ soccer_brain_node:
     # goal_target: left post -1, right post 1, range [-1, 1].
     # Example: 0.3 means right of center.
     goal_target: 0.0
-    nav_ball_distance_m: 0.2
+    nav_ball_distance_m: 0.8
 
     # Unitree SDK2 / G1 loco settings.
     # Set unitree_network_interface when DDS must bind to a specific NIC.
@@ -34,11 +34,11 @@ soccer_brain_node:
     # ALIGN target and stability gate.
     # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
     enable_align: true
-    align_target_ball_x_m: 0.4
-    align_target_ball_y_m: 0.0
-    align_x_tolerance_m: 0.08
-    align_y_tolerance_m: 0.06
-    align_yaw_tolerance_rad: 0.9
+    align_target_ball_x_m: 0.8
+    align_target_ball_y_m: -0.3
+    align_x_tolerance_m: 0.1
+    align_y_tolerance_m: 0.07
+    align_yaw_tolerance_rad: 9.9
     align_required_stable_frames: 2
     kick_on_align_ball_lost_near_feet: true
     align_lost_ball_kick_x_m: 0.45
@@ -55,7 +55,7 @@ soccer_brain_node:
     align_max_vx: 0.50
     align_max_vy: 0.50
     align_max_wz: 0.0
-    align_min_speed: 0.20
+    align_min_speed: 0.22
     # LegController calls Move(vx, vy, vyaw) with continous_move=false by
     # default, so one velocity command remains effective for 1 second.
     align_step_duration_s: 1.00
@@ -69,11 +69,11 @@ soccer_brain_node:
     goalkeeper_min_ball_confidence: 0.30
     goalkeeper_enable_motion: true
     goalkeeper_center_deadband_x: 0.05
-    goalkeeper_lateral_kp: 2.0
+    goalkeeper_lateral_kp: 3.0
     goalkeeper_min_lateral_speed: 0.8
     goalkeeper_lateral_speed: 1.00
     # Change to -1.0 if image-right requires negative robot vy on the real G1.
-    goalkeeper_lateral_sign: 1.0
+    goalkeeper_lateral_sign: -1.0
     goalkeeper_perception_timeout_s: 1.00
 
     # Perception validity.
@@ -98,8 +98,8 @@ soccer_brain_node:
     #  "trajectory": kick_trajectory_path, "end_behavior": kick_end_behavior,
     #  "quat_comp": kick_quat_comp,
     #  "allowed_from": ["PASSIVE", "LOCO", "FIXEDSTAND"]}
-    kick_model_path: ""
-    kick_trajectory_path: ""
+    kick_model_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot1_v0_40000.onnx"
+    kick_trajectory_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot_1_ext.trajbin"
     kick_policy_type: lingshu
     kick_end_behavior: switch_to_loco
     kick_quat_comp: -0.2

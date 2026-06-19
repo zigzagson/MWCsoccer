@@ -43,11 +43,14 @@ def generate_launch_description():
             name="soccer_brain_node",
             output="screen",
             parameters=[
-                params_file,
+                # Launch args first as fallback defaults, so the params file
+                # (loaded afterwards) can override them. This lets the YAML
+                # kick_model_path / kick_trajectory_path take priority.
                 {
                     "kick_model_path": kick_model_path,
                     "kick_trajectory_path": kick_trajectory_path,
                 },
+                params_file,
             ],
         ),
     ])
