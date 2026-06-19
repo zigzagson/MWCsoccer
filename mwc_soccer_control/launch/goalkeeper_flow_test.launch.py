@@ -29,8 +29,6 @@ def generate_launch_description():
                 {
                     "start_mode": "GOALKEEPER",
                     "goalkeeper_enable_motion": False,
-                    "goalkeeper_move_duration_s": 0.35,
-                    "goalkeeper_rearm_delay_s": 0.20,
                 },
             ],
         )

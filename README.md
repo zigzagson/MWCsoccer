@@ -63,8 +63,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 2. 启动 `mwc_soccer_control`。
 3. 点球模式下，主控的状态流转为：
    `PENALTY_ATTACK -> START_BALL_TRACK -> ALIGN -> STOP_BALL_TRACK -> READY_KICK -> KICK -> FINISH`
-4. 守门模式下，主控的状态流转为：
-   `GOALKEEPER -> TRACK_BALL -> GOALKEEPER_MOVE -> TRACK_BALL`
+4. 守门模式下，主控保持在 `GOALKEEPER -> TRACK_BALL`，持续根据球的图像横坐标闭环横移。
 5. `ALIGN` 阶段会临时把 G1 loco FSM 切到 `812`，结束后恢复到 `802`。
 
 ## 参数文件
@@ -127,9 +126,9 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_min_step_period_s`：`GetFsmMode` 确认站立后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到站立确认之后的新 `/soccer/perception`，才会计算并发送下一次修正。
 - `align_require_standing_for_sample`：是否要求 `GetFsmMode()==0` 后才采纳 ALIGN 坐标。默认 `true`；移动期间、停稳前和重复的感知帧都不参与误差计算及稳定计数。
 
-### 守门趋势控制
+### 守门横向闭环控制
 
-守门模式复用 `/soccer/perception.ball`，但坐标含义是图像中心坐标：`x<0` 为左、`x>0` 为右、`y<0` 为下、`y>0` 为上，`z=0`。只有 `image_has_ball=true`、`transform_valid=true` 且球置信度达标的帧才参与趋势判断；`image_has_goal` 和球门置信度不参与守门判断。坐标不会被解释为米。
+守门模式复用 `/soccer/perception.ball`，但坐标含义是图像中心坐标：`x<0` 为左、`x>0` 为右、`y<0` 为下、`y>0` 为上，`z=0`。只有 `image_has_ball=true`、`transform_valid=true` 且球置信度达标的帧才参与控制；`image_has_goal` 和球门置信度不参与守门判断。主控持续调节 `vy` 使球保持在 `x=0` 附近，始终保持 `vx=0`、`wz=0`。
 
 不驱动机器人、只测试消息和状态流程：
 
@@ -137,21 +136,16 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 ros2 launch mwc_soccer_control goalkeeper_flow_test.launch.py
 ```
 
-该测试依次模拟静止球、快速向右、无效感知和快速向左，成功时打印 `goalkeeper flow passed`。测试 launch 固定覆盖 `goalkeeper_enable_motion=false`。
+该测试依次模拟居中、右偏、重新居中、左偏和无效感知。测试 launch 固定覆盖 `goalkeeper_enable_motion=false`。
 
-- `goalkeeper_trend_frames`：参与一次趋势判断的最新帧数，默认 `4`。
-- `goalkeeper_trend_window_s`：这些帧允许跨越的最大时间，默认 `0.35s`。
-- `goalkeeper_min_frame_delta_x`：单个帧间变化被认为方向有效的最小值，默认 `0.01`。
-- `goalkeeper_min_total_delta_x`：窗口内触发横移所需的最小横向总位移，默认 `0.12`。
-- `goalkeeper_min_horizontal_speed`：图像横向变化速度阈值，默认 `0.80` 坐标单位每秒。
-- `goalkeeper_direction_consistency`：帧间横向变化同向比例，默认 `0.75`。
-- `goalkeeper_min_downward_speed`：可选的向下接近速度阈值；默认 `0` 表示不启用。
 - `goalkeeper_enable_motion`：是否实际调用 `SetVelocity`。正式运行默认 `true`，守门流程测试 launch 会覆盖为 `false`。
-- `goalkeeper_lateral_speed`：机器人横移速度绝对值，默认最高速 `1.00m/s`。
+- `goalkeeper_center_deadband_x`：图像中心死区，默认 `0.05`；球在该范围内时发送零速。
+- `goalkeeper_lateral_kp`：图像横向误差到机器人横移速度的比例系数，默认 `2.0`。
+- `goalkeeper_min_lateral_speed`：超出死区后的最小非零横移速度，默认 `0.20m/s`。
+- `goalkeeper_lateral_speed`：机器人横移速度上限，默认最高速 `1.00m/s`。
 - `goalkeeper_lateral_sign`：图像方向到机器人 `vy` 的符号映射，默认 `1.0`；实机方向相反时改为 `-1.0`。
-- `goalkeeper_move_duration_s`：一次快速横移持续时间，默认 `0.70s`。
-- `goalkeeper_rearm_delay_s`：横移停止后重新检测的等待时间，默认 `0.40s`。
-- `goalkeeper_perception_timeout_s`：守门感知新鲜度阈值，默认 `0.30s`。
+- `goalkeeper_command_duration_s`：每次横移速度指令的持续时间，默认 `0.20s`；每个新感知帧都会刷新。
+- `goalkeeper_perception_timeout_s`：守门感知停止阈值，默认 `1.00s`。持续收到无效帧满 1 秒，或感知 topic 连续 1 秒未更新时，主控发送零速停止。
 
 ### 感知有效性
 

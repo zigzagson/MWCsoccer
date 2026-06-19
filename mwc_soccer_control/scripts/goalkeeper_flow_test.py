@@ -37,35 +37,49 @@ class GoalkeeperFlowTest(Node):
         self.start_time = self.get_clock().now()
         self.last_state: Optional[str] = None
         self.history: List[str] = []
-        self.move_count = 0
+        self.right_seen = False
+        self.left_seen = False
+        self.center_seen = False
         self.timer = self.create_timer(0.05, self.tick)
         self.get_logger().info(
-            "goalkeeper test started: stationary -> right shot -> invalid "
-            "perception -> left shot"
+            "goalkeeper test started: center -> right offset -> center -> "
+            "invalid perception -> left offset -> center"
         )
 
     def on_behavior(self, msg: BehaviorState) -> None:
-        if msg.state == self.last_state:
+        if msg.state != self.last_state:
+            self.last_state = msg.state
+            self.history.append(msg.state)
+            self.get_logger().info(
+                f"behavior_state -> {msg.mode}/{msg.state}: {msg.detail}"
+            )
+
+        if "goalkeeper control" not in msg.detail or "vy=" not in msg.detail:
             return
-        self.last_state = msg.state
-        self.history.append(msg.state)
-        self.get_logger().info(
-            f"behavior_state -> {msg.mode}/{msg.state}: {msg.detail}"
-        )
-        if msg.state == "GOALKEEPER_MOVE":
-            self.move_count += 1
+        try:
+            vy = float(msg.detail.split("vy=", 1)[1].split()[0])
+        except ValueError:
+            return
+        if vy > 0.0:
+            self.right_seen = True
+        elif vy < 0.0:
+            self.left_seen = True
+        else:
+            self.center_seen = True
 
     def tick(self) -> None:
         elapsed = (self.get_clock().now() - self.start_time).nanoseconds / 1e9
         if elapsed >= 7.0:
-            if self.move_count >= 2:
+            if self.right_seen and self.left_seen and self.center_seen:
                 self.get_logger().info(
-                    f"goalkeeper flow passed: move_count={self.move_count} "
-                    f"history={self.history}"
+                    "goalkeeper flow passed: right, left and center commands "
+                    f"observed; history={self.history}"
                 )
             else:
                 self.get_logger().error(
-                    f"goalkeeper flow failed: move_count={self.move_count} "
+                    "goalkeeper flow failed: "
+                    f"right={self.right_seen} left={self.left_seen} "
+                    f"center={self.center_seen} "
                     f"history={self.history}"
                 )
             rclpy.shutdown()
@@ -74,14 +88,12 @@ class GoalkeeperFlowTest(Node):
         valid = True
         x = 0.0
         y = 0.20
-        if 1.0 <= elapsed < 1.4:
-            x = (elapsed - 1.0) * 1.8
-            y = 0.20 - (elapsed - 1.0) * 0.4
+        if 1.0 <= elapsed < 2.0:
+            x = 0.40
         elif 3.0 <= elapsed < 3.6:
             valid = False
-        elif 4.5 <= elapsed < 4.9:
-            x = -(elapsed - 4.5) * 1.8
-            y = 0.20 - (elapsed - 4.5) * 0.4
+        elif 4.5 <= elapsed < 5.5:
+            x = -0.40
 
         self.publish_perception(x, y, valid)
 

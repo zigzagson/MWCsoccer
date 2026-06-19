@@ -8,12 +8,12 @@ soccer_brain_node:
     # goal_target: left post -1, right post 1, range [-1, 1].
     # Example: 0.3 means right of center.
     goal_target: 0.0
-    nav_ball_distance_m: 0.75
+    nav_ball_distance_m: 0.2
 
     # Unitree SDK2 / G1 loco settings.
     # Set unitree_network_interface when DDS must bind to a specific NIC.
     unitree_network_interface: ""
-    align_obstacle_fsm_id: 812
+    align_obstacle_fsm_id: 802
     align_restore_fsm_id: 802
     restore_fsm_after_align: true
     require_unitree_align_mode: true
@@ -33,12 +33,12 @@ soccer_brain_node:
     # ALIGN target and stability gate.
     # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
     enable_align: true
-    align_target_ball_x_m: 0.22
+    align_target_ball_x_m: 0.4
     align_target_ball_y_m: 0.0
     align_x_tolerance_m: 0.08
     align_y_tolerance_m: 0.06
-    align_yaw_tolerance_rad: 0.12
-    align_required_stable_frames: 3
+    align_yaw_tolerance_rad: 0.9
+    align_required_stable_frames: 2
     kick_on_align_ball_lost_near_feet: true
     align_lost_ball_kick_x_m: 0.45
     align_lost_ball_kick_y_tolerance_m: 0.10
@@ -50,10 +50,10 @@ soccer_brain_node:
     # settle period, and then uses a fresh perception sample.
     align_kx: 0.45
     align_ky: 0.55
-    align_kw: 0.90
+    align_kw: 0.0
     align_max_vx: 0.50
     align_max_vy: 0.50
-    align_max_wz: 0.50
+    align_max_wz: 0.0
     align_min_speed: 0.20
     align_step_duration_s: 0.45
     align_min_step_period_s: 0.15
@@ -64,29 +64,22 @@ soccer_brain_node:
     # image_has_ball and transform_valid must both be true. Goal fields are
     # ignored because the wide-angle goalkeeper view normally has no goal.
     goalkeeper_min_ball_confidence: 0.30
-    goalkeeper_trend_frames: 4
-    goalkeeper_trend_window_s: 0.35
-    goalkeeper_min_frame_delta_x: 0.01
-    goalkeeper_min_total_delta_x: 0.12
-    goalkeeper_min_horizontal_speed: 0.80
-    goalkeeper_direction_consistency: 0.75
-    # 0 disables the downward-motion requirement. Set a positive value to
-    # require image y velocity <= -value before moving.
-    goalkeeper_min_downward_speed: 0.0
     goalkeeper_enable_motion: true
+    goalkeeper_center_deadband_x: 0.05
+    goalkeeper_lateral_kp: 2.0
+    goalkeeper_min_lateral_speed: 0.8
     goalkeeper_lateral_speed: 1.00
     # Change to -1.0 if image-right requires negative robot vy on the real G1.
     goalkeeper_lateral_sign: 1.0
-    goalkeeper_move_duration_s: 0.70
-    goalkeeper_rearm_delay_s: 0.40
-    goalkeeper_perception_timeout_s: 0.30
+    goalkeeper_command_duration_s: 0.20
+    goalkeeper_perception_timeout_s: 1.00
 
     # Perception validity.
     min_ball_confidence: 0.30
     min_goal_confidence: 0.25
 
     # Whole-body kick action.
-    kick_action_server: /whole_body/action_ctrl
+    kick_action_server: /lingshu/action_ctrl
     kick_action_name: PENALTY_KICK
     enable_kick_action: true
     kick_server_timeout_s: 2.0
