@@ -9,6 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
+#include <geometry_msgs/msg/twist.hpp>
 #include <message_center/action/execution_unit.hpp>
 #include <soccer_msgs/msg/behavior_state.hpp>
 #include <soccer_msgs/msg/game_mode_command.hpp>
@@ -153,6 +154,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("nav_ball_distance_m", 0.75);
 
     declare_parameter<std::string>("unitree_network_interface", "");
+    declare_parameter<std::string>("velocity_command_topic", "/nav/cmd_vel_nav");
     declare_parameter<int>("align_obstacle_fsm_id", 812);
     declare_parameter<int>("align_restore_fsm_id", 802);
     declare_parameter<bool>("restore_fsm_after_align", true);
@@ -189,7 +191,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("align_max_vy", 0.50);
     declare_parameter<double>("align_max_wz", 0.50);
     declare_parameter<double>("align_min_speed", 0.20);
-    declare_parameter<double>("align_step_duration_s", 0.45);
+    declare_parameter<double>("align_step_duration_s", 1.00);
     declare_parameter<double>("align_min_step_period_s", 0.15);
     declare_parameter<bool>("align_require_standing_for_sample", true);
 
@@ -200,7 +202,6 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<double>("goalkeeper_min_lateral_speed", 0.20);
     declare_parameter<double>("goalkeeper_lateral_speed", 1.00);
     declare_parameter<double>("goalkeeper_lateral_sign", 1.0);
-    declare_parameter<double>("goalkeeper_command_duration_s", 0.20);
     declare_parameter<double>("goalkeeper_perception_timeout_s", 1.00);
 
     declare_parameter<double>("min_ball_confidence", 0.45);
@@ -226,6 +227,8 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     unitree_network_interface_ =
         get_parameter("unitree_network_interface").as_string();
+    velocity_command_topic_ =
+        get_parameter("velocity_command_topic").as_string();
     align_obstacle_fsm_id_ =
         static_cast<int>(get_parameter("align_obstacle_fsm_id").as_int());
     align_restore_fsm_id_ =
@@ -298,8 +301,6 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter("goalkeeper_lateral_speed").as_double();
     goalkeeper_lateral_sign_ =
         get_parameter("goalkeeper_lateral_sign").as_double();
-    goalkeeper_command_duration_s_ =
-        get_parameter("goalkeeper_command_duration_s").as_double();
     goalkeeper_perception_timeout_s_ =
         get_parameter("goalkeeper_perception_timeout_s").as_double();
 
@@ -351,6 +352,9 @@ class SoccerBrainNode final : public rclcpp::Node {
         "/soccer/vision_track_cmd", reliable_5);
     behavior_pub_ =
         create_publisher<BehaviorState>("/soccer/behavior_state", transient_1);
+    velocity_command_pub_ =
+        create_publisher<geometry_msgs::msg::Twist>(
+            velocity_command_topic_, reliable_10);
 
     kick_client_ =
         rclcpp_action::create_client<ExecutionUnit>(this, kick_action_server_);
@@ -744,12 +748,16 @@ class SoccerBrainNode final : public rclcpp::Node {
           magnitude, goalkeeper_lateral_sign_ * image_x);
     }
 
-    if (!sendGoalkeeperVelocity(lateral_speed)) {
-      transitionToError("goalkeeper SetVelocity failed");
-      return;
+    if (lateral_speed == 0.0) {
+      stopGoalkeeperMotion("ball centered");
+    } else {
+      if (!sendGoalkeeperVelocity(lateral_speed)) {
+        transitionToError("goalkeeper velocity publish failed");
+        return;
+      }
+      goalkeeper_motion_active_ = true;
     }
 
-    goalkeeper_motion_active_ = lateral_speed != 0.0;
     const std::string detail =
         "goalkeeper control image_x=" + std::to_string(image_x) +
         " image_y=" +
@@ -760,22 +768,15 @@ class SoccerBrainNode final : public rclcpp::Node {
 
   bool sendGoalkeeperVelocity(double vy) {
     if (goalkeeper_enable_motion_) {
-      const int32_t ret = loco_client_->SetVelocity(
-          0.0f, static_cast<float>(vy), 0.0f,
-          static_cast<float>(goalkeeper_command_duration_s_));
-      if (ret != 0) {
-        RCLCPP_ERROR(
-            get_logger(), "goalkeeper SetVelocity failed: %d", ret);
-        return false;
-      }
+      publishVelocityCommand(0.0, vy, 0.0, vy == 0.0);
     }
 
     RCLCPP_INFO(
         get_logger(),
-        "goalkeeper velocity %s: vx=0.000 vy=%.3f wz=0.000 duration=%.3f "
-        "image_x=%.3f deadband=%.3f",
-        goalkeeper_enable_motion_ ? "sent" : "dry-run", vy,
-        goalkeeper_command_duration_s_,
+        "goalkeeper velocity %s: topic=%s vx=0.000 vy=%.3f wz=0.000 "
+        "linear_z=%d image_x=%.3f deadband=%.3f",
+        goalkeeper_enable_motion_ ? "sent" : "dry-run",
+        velocity_command_topic_.c_str(), vy, vy == 0.0 ? 1 : 0,
         last_perception_ ? last_perception_->ball.point.x : 0.0,
         goalkeeper_center_deadband_x_);
     return true;
@@ -909,43 +910,36 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void stopObstacleStep() {
-    if (!loco_client_ || (!obstacle_mode_active_ && !continuous_gait_active_) ||
+    if ((!obstacle_mode_active_ && !continuous_gait_active_) ||
         align_stop_sent_) {
       return;
     }
-    const int32_t ret = loco_client_->SetVelocity(0.0f, 0.0f, 0.0f, 0.1f);
+    publishVelocityCommand(0.0, 0.0, 0.0, true);
     align_stop_sent_ = true;
-    if (ret != 0) {
-      RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "SetVelocity stop failed during ALIGN: %d", ret);
-    } else {
-      RCLCPP_INFO(
-          get_logger(),
-          "align velocity sent: vx=0.000 vy=0.000 wz=0.000 duration=0.100 stop");
-    }
+    RCLCPP_INFO(
+        get_logger(),
+        "align velocity topic sent: vx=0.000 vy=0.000 wz=0.000 "
+        "linear_z=1 stop");
   }
 
   bool sendObstacleStep(double vx, double vy, double wz) {
-    if (!loco_client_) {
-      return false;
-    }
-
-    const int32_t ret = loco_client_->SetVelocity(
-        static_cast<float>(vx), static_cast<float>(vy),
-        static_cast<float>(wz), static_cast<float>(align_step_duration_s_));
-    if (ret != 0) {
-      RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "SetVelocity step failed during ALIGN: %d", ret);
-      return false;
-    }
+    publishVelocityCommand(vx, vy, wz, false);
 
     last_step_time_ = now();
     last_step_perception_time_ = last_perception_time_;
     align_stand_confirmed_time_.reset();
     align_stop_sent_ = false;
     return true;
+  }
+
+  void publishVelocityCommand(
+      double vx, double vy, double wz, bool stop) {
+    geometry_msgs::msg::Twist command;
+    command.linear.x = vx;
+    command.linear.y = vy;
+    command.linear.z = stop ? 1.0 : 0.0;
+    command.angular.z = wz;
+    velocity_command_pub_->publish(command);
   }
 
   bool readyForStationaryAlignSample() {
@@ -1430,6 +1424,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   double nav_ball_distance_m_ = 0.75;
 
   std::string unitree_network_interface_;
+  std::string velocity_command_topic_ = "/nav/cmd_vel_nav";
   int align_obstacle_fsm_id_ = 812;
   int align_restore_fsm_id_ = 802;
   bool restore_fsm_after_align_ = true;
@@ -1466,7 +1461,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   double align_max_vy_ = 0.50;
   double align_max_wz_ = 0.50;
   double align_min_speed_ = 0.20;
-  double align_step_duration_s_ = 0.45;
+  double align_step_duration_s_ = 1.00;
   double align_min_step_period_s_ = 0.15;
   bool align_require_standing_for_sample_ = true;
 
@@ -1477,7 +1472,6 @@ class SoccerBrainNode final : public rclcpp::Node {
   double goalkeeper_min_lateral_speed_ = 0.20;
   double goalkeeper_lateral_speed_ = 1.00;
   double goalkeeper_lateral_sign_ = 1.0;
-  double goalkeeper_command_duration_s_ = 0.20;
   double goalkeeper_perception_timeout_s_ = 1.00;
 
   double min_ball_confidence_ = 0.45;
@@ -1521,6 +1515,8 @@ class SoccerBrainNode final : public rclcpp::Node {
   rclcpp::Publisher<GameModeCommand>::SharedPtr game_mode_pub_;
   rclcpp::Publisher<VisionTrackCommand>::SharedPtr vision_track_pub_;
   rclcpp::Publisher<BehaviorState>::SharedPtr behavior_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr
+      velocity_command_pub_;
   rclcpp_action::Client<ExecutionUnit>::SharedPtr kick_client_;
   rclcpp::TimerBase::SharedPtr timer_;
 

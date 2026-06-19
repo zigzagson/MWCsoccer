@@ -80,6 +80,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 ### Unitree 运控模式
 
 - `unitree_network_interface`：Unitree SDK2 DDS 绑定网卡。为空时走默认配置；如果 DDS 发现网卡不对，再填实际网卡名。
+- `velocity_command_topic`：点球微调和守门横移统一发布速度的 `Twist` topic，默认 `/nav/cmd_vel_nav`。速度使用 `linear.x`、`linear.y`、`angular.z`；立即停止时三项速度置零并设置 `linear.z=1`，由 `LegController::nav_cmd_callback` 调用 `StopMove()`。
 - `align_obstacle_fsm_id`：ALIGN 微调阶段切入的运控 FSM。当前使用 `812`，也就是越障模式踏步。
 - `align_restore_fsm_id`：ALIGN 结束后的恢复 FSM。当前使用 `802`，常规走跑模式。
 - `restore_fsm_after_align`：ALIGN 结束后是否恢复 FSM。实机建议保持 `true`。
@@ -122,7 +123,7 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 - `align_max_vy`：ALIGN 横向速度上限。当前默认 `0.50`，限制左右踏步速度。
 - `align_max_wz`：ALIGN 角速度上限。当前默认 `0.50`，限制原地转向速度。
 - `align_min_speed`：ALIGN 各方向的最小非零速度。当前默认 `0.20`；某方向误差超过对应阈值时，该方向速度绝对值不会低于此值，进入对应阈值后该方向速度为 `0`。
-- `align_step_duration_s`：每次 `SetVelocity` 指令持续时间。当前默认 `0.45s`，调大单次修正更明显。
+- `align_step_duration_s`：`/nav/cmd_vel_nav` 单次速度命令的实际生效时间。`LegController` 当前调用默认 `continous_move=false` 的三参数 `Move()`，因此固定按 `1.00s` 配置；到期后主控再确认站立并采样。
 - `align_min_step_period_s`：`GetFsmMode` 确认站立后的观测稳定等待时间。当前默认 `0.15s`；等待结束后还必须收到站立确认之后的新 `/soccer/perception`，才会计算并发送下一次修正。
 - `align_require_standing_for_sample`：是否要求 `GetFsmMode()==0` 后才采纳 ALIGN 坐标。默认 `true`；移动期间、停稳前和重复的感知帧都不参与误差计算及稳定计数。
 
@@ -144,7 +145,6 @@ ros2 launch mwc_soccer_control goalkeeper_flow_test.launch.py
 - `goalkeeper_min_lateral_speed`：超出死区后的最小非零横移速度，默认 `0.20m/s`。
 - `goalkeeper_lateral_speed`：机器人横移速度上限，默认最高速 `1.00m/s`。
 - `goalkeeper_lateral_sign`：图像方向到机器人 `vy` 的符号映射，默认 `1.0`；实机方向相反时改为 `-1.0`。
-- `goalkeeper_command_duration_s`：每次横移速度指令的持续时间，默认 `0.20s`；每个新感知帧都会刷新。
 - `goalkeeper_perception_timeout_s`：守门感知停止阈值，默认 `1.00s`。持续收到无效帧满 1 秒，或感知 topic 连续 1 秒未更新时，主控发送零速停止。
 
 ### 感知有效性
@@ -195,7 +195,7 @@ ros2 launch mwc_soccer_control pre_action_flow_test.launch.py \
 
 ## 调参建议
 
-- 如果要改微调力度，优先调 `align_kx`、`align_ky`、`align_step_duration_s`
+- 如果要改微调力度，优先调 `align_kx`、`align_ky` 和速度上下限；当前 topic 接口的单条 `Move()` 固定生效 1 秒。
 - 如果要改 ALIGN 阶段的运控模式，改 `align_obstacle_fsm_id`
 - 如果要改恢复模式，改 `align_restore_fsm_id`
 - 如果要换真实射门动作，优先改 `kick_action_params_json`，或者用 `kick_model_path` / `kick_trajectory_path`

@@ -13,6 +13,7 @@ soccer_brain_node:
     # Unitree SDK2 / G1 loco settings.
     # Set unitree_network_interface when DDS must bind to a specific NIC.
     unitree_network_interface: ""
+    velocity_command_topic: /nav/cmd_vel_nav
     align_obstacle_fsm_id: 802
     align_restore_fsm_id: 802
     restore_fsm_after_align: true
@@ -55,7 +56,9 @@ soccer_brain_node:
     align_max_vy: 0.50
     align_max_wz: 0.0
     align_min_speed: 0.20
-    align_step_duration_s: 0.45
+    # LegController calls Move(vx, vy, vyaw) with continous_move=false by
+    # default, so one velocity command remains effective for 1 second.
+    align_step_duration_s: 1.00
     align_min_step_period_s: 0.15
     align_require_standing_for_sample: true
 
@@ -71,7 +74,6 @@ soccer_brain_node:
     goalkeeper_lateral_speed: 1.00
     # Change to -1.0 if image-right requires negative robot vy on the real G1.
     goalkeeper_lateral_sign: 1.0
-    goalkeeper_command_duration_s: 0.20
     goalkeeper_perception_timeout_s: 1.00
 
     # Perception validity.
