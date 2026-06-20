@@ -54,6 +54,20 @@ ros2 launch mwc_soccer_control soccer_brain.launch.py
 
 - [mwc_soccer_control/config/soccer_brain.yaml](./mwc_soccer_control/config/soccer_brain.yaml)
 
+正式配置默认从 `IDLE` 启动，并直接从 Unitree
+`rt/lowstate.wireless_remote` 读取遥控器组合键：
+
+- `L1 + R1 + A`：进入 `IDLE`
+- `L1 + R1 + X`：使用基础参数启动点球
+- `L1 + R1 + Y`：使用 `goalkeeper_default` 预设启动守门
+- `L1 + R1 + 左/上/右`：分别使用 `penalty_left`、
+  `penalty_center`、`penalty_right` 点球预设
+
+组合键需要持续按住 `remote_combo_hold_s`，触发后进入
+`remote_combo_cooldown_s` 冷却期。模式切换会先统一进入 `IDLE`，
+停止速度和视觉跟踪、取消尚未完成的射门 Action、恢复运控 FSM，
+再启动目标模式。
+
 ## 启动流程
 
 1. 先确认底层机器人栈已经起来，并且这些接口可用：

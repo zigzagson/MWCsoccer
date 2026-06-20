@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -18,6 +20,9 @@
 #include <soccer_msgs/msg/vision_track_command.hpp>
 
 #include <unitree/robot/channel/channel_factory.hpp>
+#include <unitree/robot/channel/channel_subscriber.hpp>
+#include <unitree/idl/hg/LowState_.hpp>
+#include <unitree/dds_wrapper/common/unitree_joystick.hpp>
 #include <unitree/robot/g1/loco/g1_loco_api.hpp>
 #include <unitree/robot/g1/loco/g1_loco_client.hpp>
 
@@ -147,11 +152,68 @@ class SoccerBrainNode final : public rclcpp::Node {
     bool within_tolerance = false;
   };
 
+  enum class RemoteRequest : int {
+    NONE = 0,
+    IDLE,
+    PENALTY_DEFAULT,
+    GOALKEEPER_DEFAULT,
+    PENALTY_LEFT,
+    PENALTY_CENTER,
+    PENALTY_RIGHT,
+  };
+
+  struct PenaltyProfile {
+    double goal_target = 0.0;
+    double nav_ball_distance_m = 0.8;
+    double align_target_ball_x_m = 0.8;
+    double align_target_ball_y_m = -0.3;
+  };
+
+  struct GoalkeeperProfile {
+    double lateral_kp = 3.0;
+    double min_lateral_speed = 0.8;
+    double lateral_speed = 1.0;
+    double center_deadband_x = 0.05;
+  };
+
   void declareParameters() {
     declare_parameter<std::string>("start_mode", "PENALTY_ATTACK");
     declare_parameter<bool>("auto_start", true);
     declare_parameter<double>("goal_target", 0.0);
     declare_parameter<double>("nav_ball_distance_m", 0.75);
+    declare_parameter<bool>("remote_mode_control_enabled", true);
+    declare_parameter<double>("remote_combo_hold_s", 0.45);
+    declare_parameter<double>("remote_combo_cooldown_s", 1.0);
+
+    declare_parameter<double>("profiles.penalty_left.goal_target", -0.65);
+    declare_parameter<double>(
+        "profiles.penalty_left.nav_ball_distance_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_left.align_target_ball_x_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_left.align_target_ball_y_m", -0.3);
+    declare_parameter<double>("profiles.penalty_center.goal_target", 0.0);
+    declare_parameter<double>(
+        "profiles.penalty_center.nav_ball_distance_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_center.align_target_ball_x_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_center.align_target_ball_y_m", -0.3);
+    declare_parameter<double>("profiles.penalty_right.goal_target", 0.65);
+    declare_parameter<double>(
+        "profiles.penalty_right.nav_ball_distance_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_right.align_target_ball_x_m", 0.8);
+    declare_parameter<double>(
+        "profiles.penalty_right.align_target_ball_y_m", -0.3);
+    declare_parameter<double>(
+        "profiles.goalkeeper_default.lateral_kp", 3.0);
+    declare_parameter<double>(
+        "profiles.goalkeeper_default.min_lateral_speed", 0.8);
+    declare_parameter<double>(
+        "profiles.goalkeeper_default.lateral_speed", 1.0);
+    declare_parameter<double>(
+        "profiles.goalkeeper_default.center_deadband_x", 0.05);
 
     declare_parameter<std::string>("unitree_network_interface", "");
     declare_parameter<std::string>("velocity_command_topic", "/nav/cmd_vel_nav");
@@ -224,6 +286,28 @@ class SoccerBrainNode final : public rclcpp::Node {
     auto_start_ = get_parameter("auto_start").as_bool();
     goal_target_ = get_parameter("goal_target").as_double();
     nav_ball_distance_m_ = get_parameter("nav_ball_distance_m").as_double();
+    penalty_default_profile_.goal_target = goal_target_;
+    penalty_default_profile_.nav_ball_distance_m = nav_ball_distance_m_;
+    remote_mode_control_enabled_ =
+        get_parameter("remote_mode_control_enabled").as_bool();
+    remote_combo_hold_s_ = get_parameter("remote_combo_hold_s").as_double();
+    remote_combo_cooldown_s_ =
+        get_parameter("remote_combo_cooldown_s").as_double();
+
+    penalty_left_profile_ = loadPenaltyProfile("penalty_left");
+    penalty_center_profile_ = loadPenaltyProfile("penalty_center");
+    penalty_right_profile_ = loadPenaltyProfile("penalty_right");
+    goalkeeper_default_profile_.lateral_kp =
+        get_parameter("profiles.goalkeeper_default.lateral_kp").as_double();
+    goalkeeper_default_profile_.min_lateral_speed =
+        get_parameter(
+            "profiles.goalkeeper_default.min_lateral_speed").as_double();
+    goalkeeper_default_profile_.lateral_speed =
+        get_parameter(
+            "profiles.goalkeeper_default.lateral_speed").as_double();
+    goalkeeper_default_profile_.center_deadband_x =
+        get_parameter(
+            "profiles.goalkeeper_default.center_deadband_x").as_double();
 
     unitree_network_interface_ =
         get_parameter("unitree_network_interface").as_string();
@@ -256,6 +340,10 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter("align_target_ball_x_m").as_double();
     align_target_ball_y_m_ =
         get_parameter("align_target_ball_y_m").as_double();
+    penalty_default_profile_.align_target_ball_x_m =
+        align_target_ball_x_m_;
+    penalty_default_profile_.align_target_ball_y_m =
+        align_target_ball_y_m_;
     enable_align_ = get_parameter("enable_align").as_bool();
     align_x_tolerance_m_ = get_parameter("align_x_tolerance_m").as_double();
     align_y_tolerance_m_ = get_parameter("align_y_tolerance_m").as_double();
@@ -320,6 +408,20 @@ class SoccerBrainNode final : public rclcpp::Node {
     kick_result_timeout_s_ = get_parameter("kick_result_timeout_s").as_double();
   }
 
+  PenaltyProfile loadPenaltyProfile(const std::string& name) const {
+    const std::string prefix = "profiles." + name + ".";
+    PenaltyProfile profile;
+    profile.goal_target =
+        get_parameter(prefix + "goal_target").as_double();
+    profile.nav_ball_distance_m =
+        get_parameter(prefix + "nav_ball_distance_m").as_double();
+    profile.align_target_ball_x_m =
+        get_parameter(prefix + "align_target_ball_x_m").as_double();
+    profile.align_target_ball_y_m =
+        get_parameter(prefix + "align_target_ball_y_m").as_double();
+    return profile;
+  }
+
   void initUnitreeClient() {
     if (!unitree_network_interface_.empty()) {
       unitree::robot::ChannelFactory::Instance()->Init(
@@ -330,6 +432,19 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     loco_client_ = std::make_unique<unitree::robot::g1::LocoClient>();
     loco_client_->Init();
+
+    if (remote_mode_control_enabled_) {
+      low_state_subscriber_ = std::make_shared<
+          unitree::robot::ChannelSubscriber<
+              unitree_hg::msg::dds_::LowState_>>("rt/lowstate");
+      low_state_subscriber_->InitChannel(
+          [this](const void* message) { onLowState(message); });
+      RCLCPP_INFO(
+          get_logger(),
+          "remote mode control enabled on rt/lowstate: "
+          "L1+R1+A=IDLE, L1+R1+X=PENALTY, L1+R1+Y=GOALKEEPER, "
+          "L1+R1+LEFT/UP/RIGHT=penalty profiles");
+    }
   }
 
   void initRosIo() {
@@ -425,7 +540,76 @@ class SoccerBrainNode final : public rclcpp::Node {
     last_nav_status_time_ = now();
   }
 
+  void onLowState(const void* message) {
+    const auto* state =
+        static_cast<const unitree_hg::msg::dds_::LowState_*>(message);
+    if (!state || state->wireless_remote().size() < 40) {
+      return;
+    }
+
+    unitree::common::REMOTE_DATA_RX remote{};
+    std::memcpy(
+        remote.buff, state->wireless_remote().data(), sizeof(remote.buff));
+    const auto& buttons = remote.RF_RX.btn.components;
+
+    RemoteRequest candidate = RemoteRequest::NONE;
+    if (buttons.L1 && buttons.R1) {
+      if (buttons.A) {
+        candidate = RemoteRequest::IDLE;
+      } else if (buttons.X) {
+        candidate = RemoteRequest::PENALTY_DEFAULT;
+      } else if (buttons.Y) {
+        candidate = RemoteRequest::GOALKEEPER_DEFAULT;
+      } else if (buttons.left) {
+        candidate = RemoteRequest::PENALTY_LEFT;
+      } else if (buttons.up) {
+        candidate = RemoteRequest::PENALTY_CENTER;
+      } else if (buttons.right) {
+        candidate = RemoteRequest::PENALTY_RIGHT;
+      }
+    }
+
+    const auto steady_now = std::chrono::steady_clock::now();
+    if (candidate == RemoteRequest::NONE) {
+      remote_candidate_ = RemoteRequest::NONE;
+      remote_candidate_fired_ = false;
+      return;
+    }
+    if (candidate != remote_candidate_) {
+      remote_candidate_ = candidate;
+      remote_candidate_since_ = steady_now;
+      remote_candidate_fired_ = false;
+      return;
+    }
+    if (remote_candidate_fired_) {
+      return;
+    }
+
+    const double held_s =
+        std::chrono::duration<double>(
+            steady_now - remote_candidate_since_).count();
+    const bool cooldown_ready =
+        !last_remote_trigger_time_ ||
+        std::chrono::duration<double>(
+            steady_now - *last_remote_trigger_time_).count() >=
+            remote_combo_cooldown_s_;
+    if (held_s < remote_combo_hold_s_ || !cooldown_ready) {
+      return;
+    }
+
+    int expected = static_cast<int>(RemoteRequest::NONE);
+    if (pending_remote_request_.compare_exchange_strong(
+            expected, static_cast<int>(candidate))) {
+      remote_candidate_fired_ = true;
+      last_remote_trigger_time_ = steady_now;
+    }
+  }
+
   void startConfiguredMode() {
+    if (start_mode_ == "IDLE") {
+      enterIdle("configured startup");
+      return;
+    }
     if (start_mode_ == "PENALTY_ATTACK") {
       startPenaltyAttack();
       return;
@@ -435,6 +619,100 @@ class SoccerBrainNode final : public rclcpp::Node {
       return;
     }
     transitionToError("unsupported start_mode: " + start_mode_);
+  }
+
+  void applyPenaltyProfile(
+      const PenaltyProfile& profile, const std::string& name) {
+    goal_target_ = profile.goal_target;
+    nav_ball_distance_m_ = profile.nav_ball_distance_m;
+    align_target_ball_x_m_ = profile.align_target_ball_x_m;
+    align_target_ball_y_m_ = profile.align_target_ball_y_m;
+    active_profile_ = name;
+  }
+
+  void applyGoalkeeperProfile(
+      const GoalkeeperProfile& profile, const std::string& name) {
+    goalkeeper_lateral_kp_ = profile.lateral_kp;
+    goalkeeper_min_lateral_speed_ = profile.min_lateral_speed;
+    goalkeeper_lateral_speed_ = profile.lateral_speed;
+    goalkeeper_center_deadband_x_ = profile.center_deadband_x;
+    active_profile_ = name;
+  }
+
+  void enterIdle(const std::string& reason) {
+    ++mode_generation_;
+    publishVelocityCommand(0.0, 0.0, 0.0, true);
+    publishVisionTrackCommand("STOP_BALL_TRACK");
+    stopObstacleStep();
+    if (!restoreFsmAfterAlign()) {
+      RCLCPP_WARN(get_logger(), "failed to restore FSM while entering IDLE");
+    }
+    if (kick_goal_handle_) {
+      kick_client_->async_cancel_goal(kick_goal_handle_);
+      kick_goal_handle_.reset();
+    }
+
+    state_ = State::IDLE;
+    mode_ = "IDLE";
+    state_enter_time_ = now();
+    active_profile_.clear();
+    stable_align_frames_ = 0;
+    kick_goal_sent_ = false;
+    goalkeeper_motion_active_ = false;
+    goalkeeper_invalid_since_.reset();
+    last_goalkeeper_processed_perception_time_.reset();
+    last_valid_align_command_.reset();
+    last_valid_align_ball_x_.reset();
+    last_step_time_.reset();
+    last_step_perception_time_.reset();
+    last_processed_align_perception_time_.reset();
+    align_stand_confirmed_time_.reset();
+    align_stand_perception_time_.reset();
+    last_logged_align_lost_perception_time_.reset();
+    publishGameMode("IDLE");
+    publishBehavior("IDLE", reason);
+    RCLCPP_WARN(get_logger(), "soccer mode entered IDLE: %s", reason.c_str());
+  }
+
+  void switchMode(RemoteRequest request) {
+    enterIdle("remote mode switch");
+    switch (request) {
+      case RemoteRequest::IDLE:
+      case RemoteRequest::NONE:
+        return;
+      case RemoteRequest::PENALTY_DEFAULT:
+        applyPenaltyProfile(penalty_default_profile_, "penalty_default");
+        startPenaltyAttack();
+        return;
+      case RemoteRequest::GOALKEEPER_DEFAULT:
+        applyGoalkeeperProfile(
+            goalkeeper_default_profile_, "goalkeeper_default");
+        startGoalkeeper();
+        return;
+      case RemoteRequest::PENALTY_LEFT:
+        applyPenaltyProfile(penalty_left_profile_, "penalty_left");
+        startPenaltyAttack();
+        return;
+      case RemoteRequest::PENALTY_CENTER:
+        applyPenaltyProfile(penalty_center_profile_, "penalty_center");
+        startPenaltyAttack();
+        return;
+      case RemoteRequest::PENALTY_RIGHT:
+        applyPenaltyProfile(penalty_right_profile_, "penalty_right");
+        startPenaltyAttack();
+        return;
+    }
+  }
+
+  bool consumeRemoteRequest() {
+    const int raw = pending_remote_request_.exchange(
+        static_cast<int>(RemoteRequest::NONE));
+    const auto request = static_cast<RemoteRequest>(raw);
+    if (request == RemoteRequest::NONE) {
+      return false;
+    }
+    switchMode(request);
+    return true;
   }
 
   void publishGameMode(const std::string& mode) {
@@ -469,6 +747,9 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void tick() {
+    if (consumeRemoteRequest()) {
+      return;
+    }
     switch (state_) {
       case State::IDLE:
         return;
@@ -1248,18 +1529,32 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_logger(), "kick action goal sending: server=%s params=%s",
         kick_action_server_.c_str(), goal.params.c_str());
 
+    const uint64_t generation = mode_generation_;
     auto options = rclcpp_action::Client<ExecutionUnit>::SendGoalOptions();
     options.goal_response_callback =
-        [this](const GoalHandleExecutionUnit::SharedPtr& handle) {
+        [this, generation](const GoalHandleExecutionUnit::SharedPtr& handle) {
           if (!handle) {
+            if (generation != mode_generation_) {
+              return;
+            }
             RCLCPP_ERROR(get_logger(), "kick action goal response: rejected");
             transitionToError("kick goal rejected");
             return;
           }
+          if (generation != mode_generation_) {
+            kick_client_->async_cancel_goal(handle);
+            return;
+          }
+          kick_goal_handle_ = handle;
           RCLCPP_INFO(get_logger(), "kick action goal response: accepted");
         };
     options.result_callback =
-        [this](const GoalHandleExecutionUnit::WrappedResult& result) {
+        [this, generation](
+            const GoalHandleExecutionUnit::WrappedResult& result) {
+          if (generation != mode_generation_) {
+            return;
+          }
+          kick_goal_handle_.reset();
           const int action_result =
               result.result ? static_cast<int>(result.result->result) : -1;
           const auto action_error =
@@ -1422,6 +1717,15 @@ class SoccerBrainNode final : public rclcpp::Node {
 
   double goal_target_ = 0.0;
   double nav_ball_distance_m_ = 0.75;
+  bool remote_mode_control_enabled_ = true;
+  double remote_combo_hold_s_ = 0.45;
+  double remote_combo_cooldown_s_ = 1.0;
+  PenaltyProfile penalty_left_profile_;
+  PenaltyProfile penalty_center_profile_;
+  PenaltyProfile penalty_right_profile_;
+  PenaltyProfile penalty_default_profile_;
+  GoalkeeperProfile goalkeeper_default_profile_;
+  std::string active_profile_;
 
   std::string unitree_network_interface_;
   std::string velocity_command_topic_ = "/nav/cmd_vel_nav";
@@ -1503,12 +1807,25 @@ class SoccerBrainNode final : public rclcpp::Node {
   bool continuous_gait_active_ = false;
   bool align_stop_sent_ = false;
   bool kick_goal_sent_ = false;
+  uint64_t mode_generation_ = 0;
+  GoalHandleExecutionUnit::SharedPtr kick_goal_handle_;
   std::optional<int> saved_fsm_id_;
   std::optional<rclcpp::Time> last_goalkeeper_processed_perception_time_;
   std::optional<rclcpp::Time> goalkeeper_invalid_since_;
   bool goalkeeper_motion_active_ = false;
 
   std::unique_ptr<unitree::robot::g1::LocoClient> loco_client_;
+  std::shared_ptr<
+      unitree::robot::ChannelSubscriber<unitree_hg::msg::dds_::LowState_>>
+      low_state_subscriber_;
+
+  std::atomic<int> pending_remote_request_{
+      static_cast<int>(RemoteRequest::NONE)};
+  RemoteRequest remote_candidate_ = RemoteRequest::NONE;
+  bool remote_candidate_fired_ = false;
+  std::chrono::steady_clock::time_point remote_candidate_since_{};
+  std::optional<std::chrono::steady_clock::time_point>
+      last_remote_trigger_time_;
 
   rclcpp::Subscription<SoccerPerception>::SharedPtr perception_sub_;
   rclcpp::Subscription<NavStatus>::SharedPtr nav_status_sub_;

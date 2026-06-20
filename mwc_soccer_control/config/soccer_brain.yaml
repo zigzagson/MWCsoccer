@@ -1,7 +1,8 @@
 soccer_brain_node:
   ros__parameters:
     # Startup mode: PENALTY_ATTACK or GOALKEEPER.
-    start_mode: PENALTY_ATTACK
+    # Boot safely in IDLE. Use the remote combinations below to start a mode.
+    start_mode: IDLE
     auto_start: true
 
     # Penalty attack request sent to /soccer/game_mode_cmd.
@@ -9,6 +10,36 @@ soccer_brain_node:
     # Example: 0.3 means right of center.
     goal_target: 0.0
     nav_ball_distance_m: 0.8
+
+    # Remote mode control from rt/lowstate.wireless_remote.
+    # Hold each combination for remote_combo_hold_s:
+    # L1+R1+A = IDLE
+    # L1+R1+X = penalty with the current base parameters
+    # L1+R1+Y = goalkeeper_default
+    # L1+R1+left/up/right = penalty_left/center/right
+    remote_mode_control_enabled: true
+    remote_combo_hold_s: 0.45
+    remote_combo_cooldown_s: 1.0
+
+    profiles.penalty_left.goal_target: -0.65
+    profiles.penalty_left.nav_ball_distance_m: 0.8
+    profiles.penalty_left.align_target_ball_x_m: 0.8
+    profiles.penalty_left.align_target_ball_y_m: -0.3
+
+    profiles.penalty_center.goal_target: 0.0
+    profiles.penalty_center.nav_ball_distance_m: 0.8
+    profiles.penalty_center.align_target_ball_x_m: 0.8
+    profiles.penalty_center.align_target_ball_y_m: -0.3
+
+    profiles.penalty_right.goal_target: 0.65
+    profiles.penalty_right.nav_ball_distance_m: 0.8
+    profiles.penalty_right.align_target_ball_x_m: 0.8
+    profiles.penalty_right.align_target_ball_y_m: -0.3
+
+    profiles.goalkeeper_default.lateral_kp: 3.0
+    profiles.goalkeeper_default.min_lateral_speed: 0.8
+    profiles.goalkeeper_default.lateral_speed: 1.0
+    profiles.goalkeeper_default.center_deadband_x: 0.05
 
     # Unitree SDK2 / G1 loco settings.
     # Set unitree_network_interface when DDS must bind to a specific NIC.

@@ -28,6 +28,7 @@ def generate_launch_description():
                 params_file,
                 {
                     "start_mode": "GOALKEEPER",
+                    "remote_mode_control_enabled": False,
                     "goalkeeper_enable_motion": False,
                 },
             ],

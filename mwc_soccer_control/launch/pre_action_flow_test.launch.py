@@ -37,6 +37,8 @@ def generate_launch_description():
         parameters=[
             params_file,
             {
+                "start_mode": "PENALTY_ATTACK",
+                "remote_mode_control_enabled": False,
                 "enable_kick_action": False,
                 "align_require_standing_for_sample": False,
                 "kick_model_path": kick_model_path,
