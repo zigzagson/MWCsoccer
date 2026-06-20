@@ -176,6 +176,8 @@ ros2 launch mwc_soccer_control goalkeeper_flow_test.launch.py
 - `kick_action_params_json`：完整 action JSON。非空时优先使用它，适合临时试验完整配置。
 - `kick_model_path` / `kick_trajectory_path`：模型和轨迹路径。正式 launch 默认从包内 `config/` 自动注入，不需要手写绝对路径。
 - `kick_policy_type`：whole-body 动作使用的策略类型，默认 `lingshu`。
+- `kick_vendor_name_en` / `kick_vendor_name_cn`：动作供应商英文和中文名称，
+  非空时写入自动生成的 Action params JSON，为空时省略对应字段。
 - `kick_end_behavior`：动作结束后的行为，默认 `switch_to_loco`。
 - `kick_quat_comp`：自动生成 action JSON 时写入的 `quat_comp`，默认 `-0.2`。
 

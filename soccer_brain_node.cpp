@@ -273,6 +273,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<std::string>("kick_model_path", "");
     declare_parameter<std::string>("kick_trajectory_path", "");
     declare_parameter<std::string>("kick_policy_type", "lingshu");
+    declare_parameter<std::string>("kick_vendor_name_en", "");
+    declare_parameter<std::string>("kick_vendor_name_cn", "");
     declare_parameter<std::string>("kick_end_behavior", "switch_to_loco");
     declare_parameter<double>("kick_quat_comp", -0.2);
     declare_parameter<std::string>("kick_action_server", "/whole_body/action_ctrl");
@@ -400,6 +402,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     kick_model_path_ = get_parameter("kick_model_path").as_string();
     kick_trajectory_path_ = get_parameter("kick_trajectory_path").as_string();
     kick_policy_type_ = get_parameter("kick_policy_type").as_string();
+    kick_vendor_name_en_ =
+        get_parameter("kick_vendor_name_en").as_string();
+    kick_vendor_name_cn_ =
+        get_parameter("kick_vendor_name_cn").as_string();
     kick_end_behavior_ = get_parameter("kick_end_behavior").as_string();
     kick_quat_comp_ = get_parameter("kick_quat_comp").as_double();
     kick_action_server_ = get_parameter("kick_action_server").as_string();
@@ -1605,8 +1611,16 @@ class SoccerBrainNode final : public rclcpp::Node {
     params << "{"
            << "\"uuid\":\"" << jsonEscape(kick_action_name_) << "\","
            << "\"state_name\":\"" << jsonEscape(kick_action_name_) << "\","
-           << "\"policy_type\":\"" << jsonEscape(kick_policy_type_) << "\","
-           << "\"model\":\"" << jsonEscape(kick_model_path_) << "\","
+           << "\"policy_type\":\"" << jsonEscape(kick_policy_type_) << "\",";
+    if (!kick_vendor_name_en_.empty()) {
+      params << "\"vendor_name_en\":\""
+             << jsonEscape(kick_vendor_name_en_) << "\",";
+    }
+    if (!kick_vendor_name_cn_.empty()) {
+      params << "\"vendor_name_cn\":\""
+             << jsonEscape(kick_vendor_name_cn_) << "\",";
+    }
+    params << "\"model\":\"" << jsonEscape(kick_model_path_) << "\","
            << "\"trajectory\":\"" << jsonEscape(kick_trajectory_path_) << "\","
            << "\"end_behavior\":\"" << jsonEscape(kick_end_behavior_) << "\","
            << "\"quat_comp\":" << kick_quat_comp_ << ","
@@ -1785,6 +1799,8 @@ class SoccerBrainNode final : public rclcpp::Node {
   std::string kick_model_path_;
   std::string kick_trajectory_path_;
   std::string kick_policy_type_ = "lingshu";
+  std::string kick_vendor_name_en_;
+  std::string kick_vendor_name_cn_;
   std::string kick_end_behavior_ = "switch_to_loco";
   double kick_quat_comp_ = -0.2;
   std::string kick_action_server_ = "/whole_body/action_ctrl";
