@@ -37,6 +37,7 @@ install(TARGETS soccer_brain_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
+  scripts/celebration_selection_test.py
   scripts/soccer_visualizer.py
   DESTINATION lib/${PROJECT_NAME})
 

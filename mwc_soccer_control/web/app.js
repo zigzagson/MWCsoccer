@@ -16,6 +16,12 @@ const penaltyStages = [
   "STOP_BALL_TRACK", "READY_KICK", "KICK", "FINISH"
 ];
 const goalkeeperStages = ["TRACK_BALL"];
+const celebrationLabels = {
+  neymar_victory_dance: "内马尔庆祝舞",
+  forward_jump: "前跳庆祝",
+  raised_hand_taunt: "举手庆祝",
+  stretch_wave: "伸展挥手",
+};
 
 function modeOf(data) {
   return data.behavior?.mode || data.command?.mode || data.navigation?.mode || "IDLE";
@@ -88,6 +94,9 @@ function render(data) {
   $("velocity").textContent = velocity
     ? `(${fixed(velocity.vx)}, ${fixed(velocity.vy)}, ${fixed(velocity.wz)})`
     : "—";
+  const celebration = data.behavior?.celebration_selected;
+  $("celebration").textContent =
+    celebrationLabels[celebration] || celebration || "—";
 
   renderPipeline(mode, state, data.behavior);
   renderTelemetry(data);

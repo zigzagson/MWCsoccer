@@ -168,6 +168,9 @@ class SoccerVisualizer(Node):
     DETAIL_VALUE = re.compile(
         r"(?P<key>[A-Za-z_]+)=(?P<value>[-+]?(?:\d+\.?\d*|\.\d+))"
     )
+    CELEBRATION_SELECTED = re.compile(
+        r"(?:^|\s)celebration_selected=(?P<value>[A-Za-z0-9_]+)"
+    )
 
     def __init__(self) -> None:
         super().__init__("soccer_visualizer")
@@ -270,6 +273,7 @@ class SoccerVisualizer(Node):
             match.group("key"): float(match.group("value"))
             for match in self.DETAIL_VALUE.finditer(msg.detail)
         }
+        selected_match = self.CELEBRATION_SELECTED.search(msg.detail)
         self.state.update(
             "behavior",
             {
@@ -280,6 +284,9 @@ class SoccerVisualizer(Node):
                 "progress": round(float(msg.progress), 4),
                 "active": bool(msg.active),
                 "values": values,
+                "celebration_selected": (
+                    selected_match.group("value") if selected_match else None
+                ),
             },
         )
         behavior_key = (msg.mode, msg.state)

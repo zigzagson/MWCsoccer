@@ -6,7 +6,9 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -137,6 +139,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     STOP_BALL_TRACK,
     READY_KICK,
     KICK,
+    CELEBRATE,
     TRACK_BALL,
     FINISH,
     ERROR,
@@ -160,6 +163,8 @@ class SoccerBrainNode final : public rclcpp::Node {
     PENALTY_LEFT,
     PENALTY_CENTER,
     PENALTY_RIGHT,
+    SELECT_NEXT_CELEBRATION,
+    CELEBRATE,
   };
 
   struct PenaltyProfile {
@@ -174,6 +179,13 @@ class SoccerBrainNode final : public rclcpp::Node {
     double min_lateral_speed = 0.8;
     double lateral_speed = 1.0;
     double center_deadband_x = 0.05;
+  };
+
+  struct CelebrationAction {
+    std::string id;
+    std::string action_name;
+    std::string model_path;
+    std::string trajectory_path;
   };
 
   void declareParameters() {
@@ -281,6 +293,31 @@ class SoccerBrainNode final : public rclcpp::Node {
     declare_parameter<bool>("enable_kick_action", true);
     declare_parameter<double>("kick_server_timeout_s", 2.0);
     declare_parameter<double>("kick_result_timeout_s", 8.0);
+
+    declare_parameter<std::vector<std::string>>(
+        "celebration_action_ids",
+        {"neymar_victory_dance", "forward_jump", "raised_hand_taunt",
+         "stretch_wave"});
+    declare_parameter<std::vector<std::string>>(
+        "celebration_action_names",
+        {"NEYMAR_VICTORY_DANCE", "FORWARD_JUMP", "RAISED_HAND_TAUNT",
+         "STRETCH_WAVE"});
+    declare_parameter<std::string>("celebration_action_params_json", "");
+    declare_parameter<std::vector<std::string>>(
+        "celebration_model_paths", {"", "", "", ""});
+    declare_parameter<std::vector<std::string>>(
+        "celebration_trajectory_paths", {"", "", "", ""});
+    declare_parameter<std::string>("celebration_policy_type", "lingshu");
+    declare_parameter<std::string>("celebration_vendor_name_en", "");
+    declare_parameter<std::string>("celebration_vendor_name_cn", "");
+    declare_parameter<std::string>(
+        "celebration_end_behavior", "switch_to_loco");
+    declare_parameter<double>("celebration_quat_comp", -0.2);
+    declare_parameter<std::string>(
+        "celebration_action_server", "/whole_body/action_ctrl");
+    declare_parameter<bool>("enable_celebration_action", true);
+    declare_parameter<double>("celebration_server_timeout_s", 2.0);
+    declare_parameter<double>("celebration_result_timeout_s", 15.0);
   }
 
   void loadParameters() {
@@ -412,6 +449,51 @@ class SoccerBrainNode final : public rclcpp::Node {
     enable_kick_action_ = get_parameter("enable_kick_action").as_bool();
     kick_server_timeout_s_ = get_parameter("kick_server_timeout_s").as_double();
     kick_result_timeout_s_ = get_parameter("kick_result_timeout_s").as_double();
+
+    celebration_action_params_json_ =
+        get_parameter("celebration_action_params_json").as_string();
+    const auto celebration_ids =
+        get_parameter("celebration_action_ids").as_string_array();
+    const auto celebration_names =
+        get_parameter("celebration_action_names").as_string_array();
+    const auto celebration_models =
+        get_parameter("celebration_model_paths").as_string_array();
+    const auto celebration_trajectories =
+        get_parameter("celebration_trajectory_paths").as_string_array();
+    const size_t celebration_count = celebration_ids.size();
+    if (celebration_count == 0 ||
+        celebration_names.size() != celebration_count ||
+        celebration_models.size() != celebration_count ||
+        celebration_trajectories.size() != celebration_count) {
+      throw std::runtime_error(
+          "celebration action id/name/model/trajectory arrays must be "
+          "non-empty and have equal lengths");
+    }
+    celebration_actions_.clear();
+    celebration_actions_.reserve(celebration_count);
+    for (size_t i = 0; i < celebration_count; ++i) {
+      celebration_actions_.push_back(
+          {celebration_ids[i], celebration_names[i], celebration_models[i],
+           celebration_trajectories[i]});
+    }
+    celebration_policy_type_ =
+        get_parameter("celebration_policy_type").as_string();
+    celebration_vendor_name_en_ =
+        get_parameter("celebration_vendor_name_en").as_string();
+    celebration_vendor_name_cn_ =
+        get_parameter("celebration_vendor_name_cn").as_string();
+    celebration_end_behavior_ =
+        get_parameter("celebration_end_behavior").as_string();
+    celebration_quat_comp_ =
+        get_parameter("celebration_quat_comp").as_double();
+    celebration_action_server_ =
+        get_parameter("celebration_action_server").as_string();
+    enable_celebration_action_ =
+        get_parameter("enable_celebration_action").as_bool();
+    celebration_server_timeout_s_ =
+        get_parameter("celebration_server_timeout_s").as_double();
+    celebration_result_timeout_s_ =
+        get_parameter("celebration_result_timeout_s").as_double();
   }
 
   PenaltyProfile loadPenaltyProfile(const std::string& name) const {
@@ -449,6 +531,8 @@ class SoccerBrainNode final : public rclcpp::Node {
           get_logger(),
           "remote mode control enabled on rt/lowstate: "
           "L1+R1+A=IDLE, L1+R1+X=PENALTY, L1+R1+Y=GOALKEEPER, "
+          "L1+R1+DOWN=select celebration, "
+          "L1+R1+B=run celebration (IDLE only), "
           "L1+R1+LEFT/UP/RIGHT=penalty profiles");
     }
   }
@@ -479,6 +563,8 @@ class SoccerBrainNode final : public rclcpp::Node {
 
     kick_client_ =
         rclcpp_action::create_client<ExecutionUnit>(this, kick_action_server_);
+    celebration_client_ = rclcpp_action::create_client<ExecutionUnit>(
+        this, celebration_action_server_);
 
     const auto period =
         std::chrono::duration<double>(1.0 / std::max(1.0, control_rate_hz_));
@@ -566,6 +652,10 @@ class SoccerBrainNode final : public rclcpp::Node {
         candidate = RemoteRequest::PENALTY_DEFAULT;
       } else if (buttons.Y) {
         candidate = RemoteRequest::GOALKEEPER_DEFAULT;
+      } else if (buttons.B) {
+        candidate = RemoteRequest::CELEBRATE;
+      } else if (buttons.down) {
+        candidate = RemoteRequest::SELECT_NEXT_CELEBRATION;
       } else if (buttons.left) {
         candidate = RemoteRequest::PENALTY_LEFT;
       } else if (buttons.up) {
@@ -657,6 +747,10 @@ class SoccerBrainNode final : public rclcpp::Node {
       kick_client_->async_cancel_goal(kick_goal_handle_);
       kick_goal_handle_.reset();
     }
+    if (celebration_goal_handle_) {
+      celebration_client_->async_cancel_goal(celebration_goal_handle_);
+      celebration_goal_handle_.reset();
+    }
 
     state_ = State::IDLE;
     mode_ = "IDLE";
@@ -664,6 +758,7 @@ class SoccerBrainNode final : public rclcpp::Node {
     active_profile_.clear();
     stable_align_frames_ = 0;
     kick_goal_sent_ = false;
+    celebration_goal_sent_ = false;
     goalkeeper_motion_active_ = false;
     goalkeeper_invalid_since_.reset();
     last_goalkeeper_processed_perception_time_.reset();
@@ -681,6 +776,29 @@ class SoccerBrainNode final : public rclcpp::Node {
   }
 
   void switchMode(RemoteRequest request) {
+    if (request == RemoteRequest::SELECT_NEXT_CELEBRATION) {
+      if (state_ != State::IDLE) {
+        RCLCPP_WARN(
+            get_logger(),
+            "celebration selection ignored: current state is %s, IDLE required",
+            stateName(state_).c_str());
+        return;
+      }
+      selectNextCelebration();
+      return;
+    }
+    if (request == RemoteRequest::CELEBRATE) {
+      if (state_ != State::IDLE) {
+        RCLCPP_WARN(
+            get_logger(),
+            "celebration shortcut ignored: current state is %s, IDLE required",
+            stateName(state_).c_str());
+        return;
+      }
+      startCelebration();
+      return;
+    }
+
     enterIdle("remote mode switch");
     switch (request) {
       case RemoteRequest::IDLE:
@@ -706,6 +824,9 @@ class SoccerBrainNode final : public rclcpp::Node {
       case RemoteRequest::PENALTY_RIGHT:
         applyPenaltyProfile(penalty_right_profile_, "penalty_right");
         startPenaltyAttack();
+        return;
+      case RemoteRequest::SELECT_NEXT_CELEBRATION:
+      case RemoteRequest::CELEBRATE:
         return;
     }
   }
@@ -752,6 +873,33 @@ class SoccerBrainNode final : public rclcpp::Node {
     transitionTo(State::TRACK_BALL, "sent GOALKEEPER");
   }
 
+  void startCelebration() {
+    if (!enable_celebration_action_) {
+      RCLCPP_WARN(get_logger(), "celebration action is disabled");
+      return;
+    }
+    ++mode_generation_;
+    mode_ = "CELEBRATION";
+    celebration_goal_sent_ = false;
+    transitionTo(State::CELEBRATE, "remote celebration shortcut");
+  }
+
+  void selectNextCelebration() {
+    selected_celebration_index_ =
+        (selected_celebration_index_ + 1) % celebration_actions_.size();
+    const auto& action = selectedCelebration();
+    publishBehavior(
+        "IDLE", "celebration selection changed to " + action.id);
+    RCLCPP_INFO(
+        get_logger(), "celebration selected: %s (%zu/%zu)",
+        action.id.c_str(), selected_celebration_index_ + 1,
+        celebration_actions_.size());
+  }
+
+  const CelebrationAction& selectedCelebration() const {
+    return celebration_actions_.at(selected_celebration_index_);
+  }
+
   void tick() {
     if (consumeRemoteRequest()) {
       return;
@@ -776,6 +924,9 @@ class SoccerBrainNode final : public rclcpp::Node {
         return;
       case State::KICK:
         handleKick();
+        return;
+      case State::CELEBRATE:
+        handleCelebration();
         return;
       case State::TRACK_BALL:
         handleTrackBall();
@@ -982,6 +1133,20 @@ class SoccerBrainNode final : public rclcpp::Node {
     if (!sendKickGoal()) {
       transitionToError("failed to send kick action");
       return;
+    }
+  }
+
+  void handleCelebration() {
+    if (celebration_goal_sent_) {
+      if (elapsedInState() > celebration_result_timeout_s_) {
+        transitionToError("celebration action result timeout");
+      }
+      return;
+    }
+    celebration_goal_sent_ = true;
+
+    if (!sendCelebrationGoal()) {
+      transitionToError("failed to send celebration action");
     }
   }
 
@@ -1446,7 +1611,9 @@ class SoccerBrainNode final : public rclcpp::Node {
     msg.header.stamp = now();
     msg.mode = mode_;
     msg.state = state;
-    msg.detail = nowDetail(now().seconds(), detail);
+    msg.detail = nowDetail(
+        now().seconds(),
+        detail + " celebration_selected=" + selectedCelebration().id);
     msg.progress = progressForState();
     msg.active = state_ != State::IDLE && state_ != State::FINISH &&
                  state_ != State::ERROR;
@@ -1506,6 +1673,8 @@ class SoccerBrainNode final : public rclcpp::Node {
         return 0.85f;
       case State::KICK:
         return 0.95f;
+      case State::CELEBRATE:
+        return 0.5f;
       case State::TRACK_BALL:
         return 0.35f;
       case State::FINISH:
@@ -1630,6 +1799,129 @@ class SoccerBrainNode final : public rclcpp::Node {
     return goal;
   }
 
+  bool sendCelebrationGoal() {
+    if (!celebration_client_->wait_for_action_server(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration<double>(
+                    celebration_server_timeout_s_)))) {
+      RCLCPP_ERROR(
+          get_logger(), "Celebration action server unavailable: %s",
+          celebration_action_server_.c_str());
+      return false;
+    }
+
+    auto goal = makeCelebrationGoal();
+    if (goal.params.empty()) {
+      return false;
+    }
+
+    RCLCPP_INFO(
+        get_logger(),
+        "celebration action goal sending: selected=%s server=%s params=%s",
+        selectedCelebration().id.c_str(), celebration_action_server_.c_str(),
+        goal.params.c_str());
+
+    const uint64_t generation = mode_generation_;
+    auto options = rclcpp_action::Client<ExecutionUnit>::SendGoalOptions();
+    options.goal_response_callback =
+        [this, generation](const GoalHandleExecutionUnit::SharedPtr& handle) {
+          if (!handle) {
+            if (generation != mode_generation_) {
+              return;
+            }
+            RCLCPP_ERROR(
+                get_logger(), "celebration action goal response: rejected");
+            transitionToError("celebration goal rejected");
+            return;
+          }
+          if (generation != mode_generation_) {
+            celebration_client_->async_cancel_goal(handle);
+            return;
+          }
+          celebration_goal_handle_ = handle;
+          RCLCPP_INFO(
+              get_logger(), "celebration action goal response: accepted");
+        };
+    options.result_callback =
+        [this, generation](
+            const GoalHandleExecutionUnit::WrappedResult& result) {
+          if (generation != mode_generation_) {
+            return;
+          }
+          celebration_goal_handle_.reset();
+          const int action_result =
+              result.result ? static_cast<int>(result.result->result) : -1;
+          const auto action_error =
+              result.result ? result.result->error_message : "empty result";
+          RCLCPP_INFO(
+              get_logger(),
+              "celebration action result received: code=%s action_result=%d "
+              "error_message=%s",
+              resultCodeName(result.code), action_result,
+              action_error.c_str());
+          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            transitionToError("celebration action failed");
+            return;
+          }
+          if (result.result &&
+              result.result->result == ExecutionUnit::Result::SUCCESS) {
+            enterIdle("celebration succeeded");
+          } else {
+            transitionToError(
+                "celebration action failed: " + action_error);
+          }
+        };
+
+    celebration_client_->async_send_goal(goal, options);
+    publishBehavior("CELEBRATE", "celebration goal sent");
+    return true;
+  }
+
+  ExecutionUnit::Goal makeCelebrationGoal() const {
+    ExecutionUnit::Goal goal;
+    const auto& action = selectedCelebration();
+
+    if (!celebration_action_params_json_.empty()) {
+      goal.params = celebration_action_params_json_;
+      return goal;
+    }
+
+    if (action.model_path.empty() || action.trajectory_path.empty()) {
+      RCLCPP_ERROR(
+          get_logger(),
+          "celebration_action_params_json is empty and celebration_model_path/"
+          "celebration_trajectory_path are not both set for %s",
+          action.id.c_str());
+      return goal;
+    }
+
+    std::ostringstream params;
+    params << "{"
+           << "\"uuid\":\"" << jsonEscape(action.action_name) << "\","
+           << "\"state_name\":\""
+           << jsonEscape(action.action_name) << "\","
+           << "\"policy_type\":\""
+           << jsonEscape(celebration_policy_type_) << "\",";
+    if (!celebration_vendor_name_en_.empty()) {
+      params << "\"vendor_name_en\":\""
+             << jsonEscape(celebration_vendor_name_en_) << "\",";
+    }
+    if (!celebration_vendor_name_cn_.empty()) {
+      params << "\"vendor_name_cn\":\""
+             << jsonEscape(celebration_vendor_name_cn_) << "\",";
+    }
+    params << "\"model\":\"" << jsonEscape(action.model_path) << "\","
+           << "\"trajectory\":\""
+           << jsonEscape(action.trajectory_path) << "\","
+           << "\"end_behavior\":\""
+           << jsonEscape(celebration_end_behavior_) << "\","
+           << "\"quat_comp\":" << celebration_quat_comp_ << ","
+           << "\"allowed_from\":[\"PASSIVE\",\"LOCO\",\"FIXEDSTAND\"]"
+           << "}";
+    goal.params = params.str();
+    return goal;
+  }
+
   void transitionTo(State next, const std::string& detail) {
     const auto previous = state_;
     const double previous_elapsed = elapsedInState();
@@ -1711,6 +2003,8 @@ class SoccerBrainNode final : public rclcpp::Node {
         return "READY_KICK";
       case State::KICK:
         return "KICK";
+      case State::CELEBRATE:
+        return "CELEBRATE";
       case State::TRACK_BALL:
         return "TRACK_BALL";
       case State::FINISH:
@@ -1807,6 +2101,18 @@ class SoccerBrainNode final : public rclcpp::Node {
   bool enable_kick_action_ = true;
   double kick_server_timeout_s_ = 2.0;
   double kick_result_timeout_s_ = 8.0;
+  std::string celebration_action_params_json_;
+  std::vector<CelebrationAction> celebration_actions_;
+  size_t selected_celebration_index_ = 0;
+  std::string celebration_policy_type_ = "lingshu";
+  std::string celebration_vendor_name_en_;
+  std::string celebration_vendor_name_cn_;
+  std::string celebration_end_behavior_ = "switch_to_loco";
+  double celebration_quat_comp_ = -0.2;
+  std::string celebration_action_server_ = "/whole_body/action_ctrl";
+  bool enable_celebration_action_ = true;
+  double celebration_server_timeout_s_ = 2.0;
+  double celebration_result_timeout_s_ = 15.0;
 
   State state_ = State::IDLE;
   rclcpp::Time state_enter_time_;
@@ -1823,8 +2129,10 @@ class SoccerBrainNode final : public rclcpp::Node {
   bool continuous_gait_active_ = false;
   bool align_stop_sent_ = false;
   bool kick_goal_sent_ = false;
+  bool celebration_goal_sent_ = false;
   uint64_t mode_generation_ = 0;
   GoalHandleExecutionUnit::SharedPtr kick_goal_handle_;
+  GoalHandleExecutionUnit::SharedPtr celebration_goal_handle_;
   std::optional<int> saved_fsm_id_;
   std::optional<rclcpp::Time> last_goalkeeper_processed_perception_time_;
   std::optional<rclcpp::Time> goalkeeper_invalid_since_;
@@ -1851,6 +2159,7 @@ class SoccerBrainNode final : public rclcpp::Node {
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr
       velocity_command_pub_;
   rclcpp_action::Client<ExecutionUnit>::SharedPtr kick_client_;
+  rclcpp_action::Client<ExecutionUnit>::SharedPtr celebration_client_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   SoccerPerception::SharedPtr last_perception_;

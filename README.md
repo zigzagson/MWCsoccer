@@ -105,6 +105,8 @@ ros2 launch mwc_soccer_control soccer_visualizer.launch.py \
 - `L1 + R1 + A`：进入 `IDLE`
 - `L1 + R1 + X`：使用基础参数启动点球
 - `L1 + R1 + Y`：使用 `goalkeeper_default` 预设启动守门
+- `L1 + R1 + 下`：循环选择下一套庆祝动作，仅 `IDLE` 时有效
+- `L1 + R1 + B`：执行当前选中的庆祝动作，仅 `IDLE` 时有效
 - `L1 + R1 + 左/上/右`：分别使用 `penalty_left`、
   `penalty_center`、`penalty_right` 点球预设
 
@@ -112,6 +114,21 @@ ros2 launch mwc_soccer_control soccer_visualizer.launch.py \
 `remote_combo_cooldown_s` 冷却期。模式切换会先统一进入 `IDLE`，
 停止速度和视觉跟踪、取消尚未完成的射门 Action、恢复运控 FSM，
 再启动目标模式。
+
+庆祝动作与踢球动作使用相同类型的 whole-body action。正式 launch 会加载
+`config/soccer_celebration_actions/` 中的四套动作，默认选择内马尔庆祝舞。
+每次按住 `L1 + R1 + 下` 会依次切换为前跳庆祝、举手庆祝、伸展挥手，再回到
+内马尔庆祝舞。当前选择会显示在网页面板并写入 ROS 日志。动作成功后自动
+返回 `IDLE`；执行期间可用 `L1 + R1 + A` 取消并复位。
+
+只测试四个动作的循环切换和网页显示时，不要启动正式主控，运行：
+
+```bash
+ros2 launch mwc_soccer_control celebration_selection_test.launch.py
+```
+
+浏览器打开 `http://127.0.0.1:18080`。测试节点每两秒切换一次显示状态，
+不会连接或发送 whole-body Action。可用 `interval_s:=5.0` 修改切换间隔。
 
 ## 启动流程
 

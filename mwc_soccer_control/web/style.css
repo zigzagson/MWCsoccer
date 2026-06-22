@@ -74,7 +74,7 @@ main { max-width: 1500px; margin: 0 auto; padding: 0 28px 36px; }
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }

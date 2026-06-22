@@ -16,6 +16,8 @@ soccer_brain_node:
     # L1+R1+A = IDLE
     # L1+R1+X = penalty with the current base parameters
     # L1+R1+Y = goalkeeper_default
+    # L1+R1+down = select the next celebration (IDLE only)
+    # L1+R1+B = run the selected celebration (IDLE only)
     # L1+R1+left/up/right = penalty_left/center/right
     remote_mode_control_enabled: true
     remote_combo_hold_s: 0.45
@@ -139,3 +141,23 @@ soccer_brain_node:
     kick_vendor_name_cn: 灵枢
     kick_end_behavior: switch_to_loco
     kick_quat_comp: -0.2
+
+    # Whole-body celebration action. Set either the exact JSON or both asset
+    # paths before using L1+R1+B.
+    celebration_action_server: /lingshu/action_ctrl
+    celebration_action_ids:
+      [neymar_victory_dance, forward_jump, raised_hand_taunt, stretch_wave]
+    celebration_action_names:
+      [NEYMAR_VICTORY_DANCE, FORWARD_JUMP, RAISED_HAND_TAUNT, STRETCH_WAVE]
+    enable_celebration_action: true
+    celebration_server_timeout_s: 2.0
+    celebration_result_timeout_s: 15.0
+    celebration_action_params_json: ""
+    # soccer_brain.launch.py injects all four installed asset paths.
+    celebration_model_paths: ["", "", "", ""]
+    celebration_trajectory_paths: ["", "", "", ""]
+    celebration_policy_type: lingshu
+    celebration_vendor_name_en: lingshu
+    celebration_vendor_name_cn: 灵枢
+    celebration_end_behavior: switch_to_loco
+    celebration_quat_comp: -0.2
