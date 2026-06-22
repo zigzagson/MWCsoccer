@@ -85,6 +85,7 @@ class PreActionFlowTestNode(Node):
         self.start_track_seen = False
         self.align_seen = False
         self.ready_kick_seen = False
+        self.done = False
 
         period = 1.0 / max(1.0, self.publish_rate_hz)
         self.timer = self.create_timer(period, self.tick)
@@ -118,7 +119,8 @@ class PreActionFlowTestNode(Node):
             self.get_logger().error(
                 f"timeout after {self.timeout_s:.1f}s; history={self.behavior_history}"
             )
-            rclpy.shutdown()
+            self.done = True
+            self.timer.cancel()
             return
 
         self.publish_game_mode()
@@ -136,12 +138,14 @@ class PreActionFlowTestNode(Node):
             ]
             if self._contains_sequence(expected):
                 self.get_logger().info("pre-action flow closed loop passed")
-                rclpy.shutdown()
+                self.done = True
+                self.timer.cancel()
             else:
                 self.get_logger().error(
                     f"finished with unexpected behavior history={self.behavior_history}"
                 )
-                rclpy.shutdown()
+                self.done = True
+                self.timer.cancel()
 
     def publish_game_mode(self) -> None:
         msg = GameModeCommand()
@@ -224,7 +228,8 @@ def main() -> int:
         parsed.sim_settle_ball_y_m,
     )
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.1)
     finally:
         node.destroy_node()
         if rclpy.ok():

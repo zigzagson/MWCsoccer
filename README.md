@@ -50,6 +50,51 @@ colcon build --packages-select mwc_soccer_control soccer_msgs
 ros2 launch mwc_soccer_control soccer_brain.launch.py
 ```
 
+## 实时可视化
+
+构建并加载工作区后，另开一个终端启动可视化节点：
+
+```bash
+ros2 launch mwc_soccer_control soccer_visualizer.launch.py
+```
+
+本机浏览器打开：
+
+```text
+http://127.0.0.1:18080
+```
+
+可视化节点只订阅 ROS2 topic，不会发送模式或运动控制命令。它实时展示：
+
+- 点球状态机、球在机器人坐标系中的位置、期望球位、对位误差和速度指令
+- 守门图像归一化坐标、中心死区、球位置和机器人横移方向
+- 导航、感知、行为状态和速度 topic 的数据新鲜度
+- 最近的状态切换事件及球位置/横移速度趋势
+
+默认监听 `0.0.0.0:18080`，同一局域网内可通过机器人电脑 IP 访问。只允许
+本机访问时使用：
+
+```bash
+ros2 launch mwc_soccer_control soccer_visualizer.launch.py \
+  bind_address:=127.0.0.1 port:=18080
+```
+
+面板订阅 `/soccer/behavior_state`、`/soccer/perception`、
+`/soccer/nav_status`、`/soccer/game_mode_cmd` 和 `/nav/cmd_vel_nav`。
+点球画布以点球点和足球为固定参考：机器人到球的目标距离与角度由
+`align_target_ball_x_m`、`align_target_ball_y_m` 决定。视觉跟踪开始后，
+面板根据实时球相对坐标反算机器人位置并绘制移动轨迹；导航阶段如果没有
+`/odom` 或全局位姿，只显示导航状态和目标站位。
+如果修改了主控的对位目标、容差或守门死区，应把相同参数传给可视化节点，
+保证图形标记与主控配置一致，例如：
+
+```bash
+ros2 launch mwc_soccer_control soccer_visualizer.launch.py \
+  align_target_ball_x_m:=0.8 align_target_ball_y_m:=-0.3 \
+  align_x_tolerance_m:=0.1 align_y_tolerance_m:=0.07 \
+  goalkeeper_center_deadband_x:=0.05
+```
+
 这个 launch 会默认加载：
 
 - [mwc_soccer_control/config/soccer_brain.yaml](./mwc_soccer_control/config/soccer_brain.yaml)
@@ -199,14 +244,15 @@ ros2 launch mwc_soccer_control pre_action_flow_test.launch.py
 
 默认测试的微调量大约是：
 
-- 前 `10 cm`
-- 右 `15 cm`
+- 从 `(0.32m, -0.15m)` 移动到当前目标 `(0.8m, -0.3m)`
+- 纯流程测试不要求连接真实 Unitree FSM，也不会发送真实射门 action
 
 也可以覆盖：
 
 ```bash
 ros2 launch mwc_soccer_control pre_action_flow_test.launch.py \
-  sim_align_ball_x_m:=0.32 sim_align_ball_y_m:=-0.15
+  sim_align_ball_x_m:=0.32 sim_align_ball_y_m:=-0.15 \
+  sim_settle_ball_x_m:=0.8 sim_settle_ball_y_m:=-0.3
 ```
 
 ## 调参建议

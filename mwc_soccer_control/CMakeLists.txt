@@ -36,7 +36,11 @@ target_link_libraries(soccer_brain_node
 install(TARGETS soccer_brain_node
   DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch config scripts
+install(PROGRAMS
+  scripts/soccer_visualizer.py
+  DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY launch config scripts web
   DESTINATION share/${PROJECT_NAME})
 
 ament_package()

@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler, Shutdown
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -26,6 +27,8 @@ def generate_launch_description():
     test_script = LaunchConfiguration("test_script")
     sim_align_ball_x_m = LaunchConfiguration("sim_align_ball_x_m")
     sim_align_ball_y_m = LaunchConfiguration("sim_align_ball_y_m")
+    sim_settle_ball_x_m = LaunchConfiguration("sim_settle_ball_x_m")
+    sim_settle_ball_y_m = LaunchConfiguration("sim_settle_ball_y_m")
     kick_model_path = LaunchConfiguration("kick_model_path")
     kick_trajectory_path = LaunchConfiguration("kick_trajectory_path")
 
@@ -41,6 +44,8 @@ def generate_launch_description():
                 "remote_mode_control_enabled": False,
                 "enable_kick_action": False,
                 "align_require_standing_for_sample": False,
+                "require_unitree_align_mode": False,
+                "restore_fsm_after_align": False,
                 "kick_model_path": kick_model_path,
                 "kick_trajectory_path": kick_trajectory_path,
             },
@@ -55,6 +60,10 @@ def generate_launch_description():
             sim_align_ball_x_m,
             "--sim-align-ball-y-m",
             sim_align_ball_y_m,
+            "--sim-settle-ball-x-m",
+            sim_settle_ball_x_m,
+            "--sim-settle-ball-y-m",
+            sim_settle_ball_y_m,
         ],
         output="screen",
     )
@@ -90,6 +99,22 @@ def generate_launch_description():
             default_value="-0.15",
             description="Simulated ball y during ALIGN test phase",
         ),
+        DeclareLaunchArgument(
+            "sim_settle_ball_x_m",
+            default_value="0.8",
+            description="Simulated final ball x matching the controller target",
+        ),
+        DeclareLaunchArgument(
+            "sim_settle_ball_y_m",
+            default_value="-0.3",
+            description="Simulated final ball y matching the controller target",
+        ),
         controller,
         tester,
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=tester,
+                on_exit=[Shutdown(reason="pre-action flow test completed")],
+            )
+        ),
     ])

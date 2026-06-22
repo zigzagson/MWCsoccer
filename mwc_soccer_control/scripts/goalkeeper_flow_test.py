@@ -40,6 +40,7 @@ class GoalkeeperFlowTest(Node):
         self.right_seen = False
         self.left_seen = False
         self.center_seen = False
+        self.done = False
         self.timer = self.create_timer(0.05, self.tick)
         self.get_logger().info(
             "goalkeeper test started: center -> right offset -> center -> "
@@ -82,7 +83,8 @@ class GoalkeeperFlowTest(Node):
                     f"center={self.center_seen} "
                     f"history={self.history}"
                 )
-            rclpy.shutdown()
+            self.done = True
+            self.timer.cancel()
             return
 
         valid = True
@@ -123,7 +125,8 @@ def main() -> int:
     rclpy.init(args=sys.argv)
     node = GoalkeeperFlowTest()
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.1)
     finally:
         node.destroy_node()
         if rclpy.ok():

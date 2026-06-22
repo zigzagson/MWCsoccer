@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MWC Soccer 实时可视化</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">MWC · ROBOT SOCCER</p>
+      <h1>点球与守门实时控制台</h1>
+    </div>
+    <div class="connection">
+      <span id="connection-dot" class="dot"></span>
+      <span id="connection-text">正在连接</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary-grid">
+      <article class="metric">
+        <span>当前模式</span>
+        <strong id="mode">—</strong>
+      </article>
+      <article class="metric">
+        <span>行为状态</span>
+        <strong id="state">—</strong>
+      </article>
+      <article class="metric">
+        <span>球置信度</span>
+        <strong id="confidence">—</strong>
+      </article>
+      <article class="metric">
+        <span>控制速度</span>
+        <strong id="velocity">—</strong>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <article class="panel visual-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">LIVE VIEW</p>
+            <h2 id="view-title">等待模式数据</h2>
+          </div>
+          <span id="perception-freshness" class="badge muted">无感知</span>
+        </div>
+        <canvas id="field"></canvas>
+        <div id="legend" class="legend"></div>
+      </article>
+
+      <article class="panel state-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">STATE MACHINE</p>
+            <h2>执行流程</h2>
+          </div>
+          <span id="active-badge" class="badge muted">待机</span>
+        </div>
+        <div id="pipeline" class="pipeline"></div>
+        <div class="progress-track"><i id="progress"></i></div>
+        <p id="detail" class="detail">尚未收到行为状态</p>
+      </article>
+
+      <article class="panel telemetry-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">TELEMETRY</p>
+            <h2>实时遥测</h2>
+          </div>
+        </div>
+        <div id="telemetry" class="telemetry"></div>
+        <canvas id="chart"></canvas>
+      </article>
+
+      <article class="panel health-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">SYSTEM HEALTH</p>
+            <h2>数据链路</h2>
+          </div>
+        </div>
+        <div id="health" class="health-list"></div>
+      </article>
+
+      <article class="panel event-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">EVENTS</p>
+            <h2>状态事件</h2>
+          </div>
+        </div>
+        <div id="events" class="events"></div>
+      </article>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
