@@ -8,8 +8,8 @@ soccer_brain_node:
     # Penalty attack request sent to /soccer/game_mode_cmd.
     # goal_target: left post -1, right post 1, range [-1, 1].
     # Example: 0.3 means right of center.
-    goal_target: 0.0
-    nav_ball_distance_m: 0.8
+    goal_target: 0.2
+    nav_ball_distance_m: 0.3
 
     # Remote mode control from rt/lowstate.wireless_remote.
     # Hold each combination for remote_combo_hold_s:
@@ -23,20 +23,28 @@ soccer_brain_node:
     remote_combo_hold_s: 0.45
     remote_combo_cooldown_s: 1.0
 
-    profiles.penalty_left.goal_target: -0.65
-    profiles.penalty_left.nav_ball_distance_m: 0.8
-    profiles.penalty_left.align_target_ball_x_m: 0.8
-    profiles.penalty_left.align_target_ball_y_m: -0.3
+    profiles.penalty_left.goal_target: 0.0
+    profiles.penalty_left.nav_ball_distance_m: 0.3
+    profiles.penalty_left.align_target_ball_x_m: 0.53
+    profiles.penalty_left.align_target_ball_y_m: -0.22
+    # Optional per-profile kick model/trajectory. Leave empty to reuse the
+    # global kick_model_path / kick_trajectory_path.
+    profiles.penalty_left.kick_model_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot2_v0_64000.onnx"
+    profiles.penalty_left.kick_trajectory_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot_2_ext.trajbin"
 
     profiles.penalty_center.goal_target: 0.0
-    profiles.penalty_center.nav_ball_distance_m: 0.8
-    profiles.penalty_center.align_target_ball_x_m: 0.8
-    profiles.penalty_center.align_target_ball_y_m: -0.3
+    profiles.penalty_center.nav_ball_distance_m: 0.4
+    profiles.penalty_center.align_target_ball_x_m: 0.7
+    profiles.penalty_center.align_target_ball_y_m: -0.22
+    profiles.penalty_center.kick_model_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot2_v0_64000.onnx"
+    profiles.penalty_center.kick_trajectory_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot_2_ext.trajbin"
 
-    profiles.penalty_right.goal_target: 0.65
-    profiles.penalty_right.nav_ball_distance_m: 0.8
-    profiles.penalty_right.align_target_ball_x_m: 0.8
-    profiles.penalty_right.align_target_ball_y_m: -0.3
+    profiles.penalty_right.goal_target: 0.0
+    profiles.penalty_right.nav_ball_distance_m: 0.4
+    profiles.penalty_right.align_target_ball_x_m: 0.65
+    profiles.penalty_right.align_target_ball_y_m: -0.15
+    profiles.penalty_right.kick_model_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot2_v0_64000.onnx"
+    profiles.penalty_right.kick_trajectory_path: "/home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/StaticShot2_v0_64000.onnx"
 
     profiles.goalkeeper_default.lateral_kp: 3.0
     profiles.goalkeeper_default.min_lateral_speed: 0.8
@@ -57,7 +65,7 @@ soccer_brain_node:
     control_rate_hz: 20.0
     nav_timeout_s: 45.0
     nav_status_timeout_s: 2.0
-    align_timeout_s: 20.0
+    align_timeout_s: 25.0
     perception_timeout_s: 0.6
     post_track_settle_s: 1.0
     ball_perception_wait_timeout_s: 8.0
@@ -67,10 +75,10 @@ soccer_brain_node:
     # ALIGN target and stability gate.
     # ball.x is forward distance in dummy/body frame, ball.y is lateral offset.
     enable_align: true
-    align_target_ball_x_m: 0.8
-    align_target_ball_y_m: -0.3
-    align_x_tolerance_m: 0.1
-    align_y_tolerance_m: 0.07
+    align_target_ball_x_m: 0.6
+    align_target_ball_y_m: -0.29
+    align_x_tolerance_m: 0.15
+    align_y_tolerance_m: 0.05
     align_yaw_tolerance_rad: 9.9
     align_required_stable_frames: 2
     kick_on_align_ball_lost_near_feet: true
@@ -88,7 +96,7 @@ soccer_brain_node:
     align_max_vx: 0.50
     align_max_vy: 0.50
     align_max_wz: 0.0
-    align_min_speed: 0.22
+    align_min_speed: 0.21
     # LegController calls Move(vx, vy, vyaw) with continous_move=false by
     # default, so one velocity command remains effective for 1 second.
     align_step_duration_s: 1.00
@@ -102,8 +110,8 @@ soccer_brain_node:
     goalkeeper_min_ball_confidence: 0.30
     goalkeeper_enable_motion: true
     goalkeeper_center_deadband_x: 0.05
-    goalkeeper_lateral_kp: 3.0
-    goalkeeper_min_lateral_speed: 0.8
+    goalkeeper_lateral_kp: 1.3
+    goalkeeper_min_lateral_speed: 0.2
     goalkeeper_lateral_speed: 1.00
     # Change to -1.0 if image-right requires negative robot vy on the real G1.
     goalkeeper_lateral_sign: -1.0
@@ -154,8 +162,16 @@ soccer_brain_node:
     celebration_result_timeout_s: 15.0
     celebration_action_params_json: ""
     # soccer_brain.launch.py injects all four installed asset paths.
-    celebration_model_paths: ["", "", "", ""]
-    celebration_trajectory_paths: ["", "", "", ""]
+    celebration_model_paths:
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/neymar_victory_dance/Neymar_40000.onnx
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/forward_jump/huanhu2_80000.onnx
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/raised_hand_taunt/huanhu1_50000.onnx
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/stretch_wave/huanhu3_50000.onnx
+    celebration_trajectory_paths:
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/neymar_victory_dance/Neymar.trajbin
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/forward_jump/huanhu_002.trajbin
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/raised_hand_taunt/huanhu_001.trajbin
+      - /home/unitree/MWCsoccer/install/mwc_soccer_control/share/mwc_soccer_control/config/soccer_celebration_actions/stretch_wave/huanhu_003.trajbin
     celebration_policy_type: lingshu
     celebration_vendor_name_en: lingshu
     celebration_vendor_name_cn: 灵枢

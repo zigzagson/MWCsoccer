@@ -172,6 +172,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     double nav_ball_distance_m = 0.8;
     double align_target_ball_x_m = 0.8;
     double align_target_ball_y_m = -0.3;
+    // Optional per-profile kick model/trajectory. Empty means reuse the
+    // global kick_model_path / kick_trajectory_path.
+    std::string model_path;
+    std::string trajectory_path;
   };
 
   struct GoalkeeperProfile {
@@ -226,6 +230,18 @@ class SoccerBrainNode final : public rclcpp::Node {
         "profiles.goalkeeper_default.lateral_speed", 1.0);
     declare_parameter<double>(
         "profiles.goalkeeper_default.center_deadband_x", 0.05);
+
+    // Optional per-profile kick model/trajectory overrides. Empty falls back
+    // to the global kick_model_path / kick_trajectory_path.
+    declare_parameter<std::string>("profiles.penalty_left.kick_model_path", "");
+    declare_parameter<std::string>(
+        "profiles.penalty_left.kick_trajectory_path", "");
+    declare_parameter<std::string>("profiles.penalty_center.kick_model_path", "");
+    declare_parameter<std::string>(
+        "profiles.penalty_center.kick_trajectory_path", "");
+    declare_parameter<std::string>("profiles.penalty_right.kick_model_path", "");
+    declare_parameter<std::string>(
+        "profiles.penalty_right.kick_trajectory_path", "");
 
     declare_parameter<std::string>("unitree_network_interface", "");
     declare_parameter<std::string>("velocity_command_topic", "/nav/cmd_vel_nav");
@@ -383,6 +399,9 @@ class SoccerBrainNode final : public rclcpp::Node {
         align_target_ball_x_m_;
     penalty_default_profile_.align_target_ball_y_m =
         align_target_ball_y_m_;
+    // Default profile reuses the global kick model/trajectory.
+    penalty_default_profile_.model_path = kick_model_path_;
+    penalty_default_profile_.trajectory_path = kick_trajectory_path_;
     enable_align_ = get_parameter("enable_align").as_bool();
     align_x_tolerance_m_ = get_parameter("align_x_tolerance_m").as_double();
     align_y_tolerance_m_ = get_parameter("align_y_tolerance_m").as_double();
@@ -507,6 +526,18 @@ class SoccerBrainNode final : public rclcpp::Node {
         get_parameter(prefix + "align_target_ball_x_m").as_double();
     profile.align_target_ball_y_m =
         get_parameter(prefix + "align_target_ball_y_m").as_double();
+    // Per-profile kick model/trajectory override; empty falls back to global.
+    profile.model_path =
+        get_parameter(prefix + "kick_model_path").as_string();
+    if (profile.model_path.empty()) {
+      profile.model_path = get_parameter("kick_model_path").as_string();
+    }
+    profile.trajectory_path =
+        get_parameter(prefix + "kick_trajectory_path").as_string();
+    if (profile.trajectory_path.empty()) {
+      profile.trajectory_path =
+          get_parameter("kick_trajectory_path").as_string();
+    }
     return profile;
   }
 
@@ -723,6 +754,10 @@ class SoccerBrainNode final : public rclcpp::Node {
     nav_ball_distance_m_ = profile.nav_ball_distance_m;
     align_target_ball_x_m_ = profile.align_target_ball_x_m;
     align_target_ball_y_m_ = profile.align_target_ball_y_m;
+    // Apply per-profile kick model/trajectory so each penalty direction can
+    // use its own onnx/trajbin. Default profile carries the global paths.
+    kick_model_path_ = profile.model_path;
+    kick_trajectory_path_ = profile.trajectory_path;
     active_profile_ = name;
   }
 
@@ -870,6 +905,9 @@ class SoccerBrainNode final : public rclcpp::Node {
     goalkeeper_invalid_since_.reset();
     goalkeeper_motion_active_ = false;
     publishGameMode(mode_);
+    // enterIdle() in switchMode() already sent STOP_BALL_TRACK; re-enable vision
+    // tracking so the goalkeeper keeps receiving ball perception.
+    publishVisionTrackCommand("START_BALL_TRACK");
     transitionTo(State::TRACK_BALL, "sent GOALKEEPER");
   }
 
